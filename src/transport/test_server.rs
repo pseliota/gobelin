@@ -1,6 +1,3 @@
-//! A scripted loopback HTTP server that records the requests it receives.
-//! Exchanges are bounded; no proxies or external services are involved.
-
 use std::{
     collections::HashMap,
     io::{ErrorKind, Read, Write},
@@ -11,24 +8,18 @@ use std::{
 
 use reqwest::Url;
 
-/// A scripted answer to one request.
 pub(crate) enum Reply {
     Response {
-        /// Status line after the HTTP version, such as `"200 OK"`.
         status: &'static str,
-        /// Extra header lines, each ending in `\r\n`.
         headers: &'static str,
         body: String,
     },
-    /// Closes the connection without answering.
     Close,
 }
 
 pub(crate) struct RecordedRequest {
     pub(crate) method: String,
-    /// The request target: path and query string.
     pub(crate) target: String,
-    /// Header names are lowercase.
     pub(crate) headers: HashMap<String, String>,
     pub(crate) body: Vec<u8>,
 }
@@ -53,7 +44,6 @@ impl RecordedRequest {
     }
 }
 
-/// The requests a server received, available once it has served its whole script.
 pub(crate) struct Recording(JoinHandle<Vec<RecordedRequest>>);
 
 impl Recording {
@@ -61,7 +51,6 @@ impl Recording {
         self.0.join().expect("test server failed")
     }
 
-    /// Returns the only request received.
     pub(crate) fn request(self) -> RecordedRequest {
         let mut requests = self.requests();
         assert_eq!(requests.len(), 1, "expected exactly one request");
@@ -69,8 +58,6 @@ impl Recording {
     }
 }
 
-/// Serves `script` in order, one connection per reply, and returns the server's base URL.
-/// The server fails if a client does not connect within 5 seconds.
 pub(crate) fn serve(script: Vec<Reply>) -> (Url, Recording) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();

@@ -1,9 +1,5 @@
 use serde::Deserialize;
 
-/// One result in the HTTP 207 array from `DELETE /v2/orders`.
-/// Each status describes that order's cancellation attempt, not its final lifecycle state.
-/// Single-order cancellation returns HTTP 204 without a response body.
-/// See <https://docs.alpaca.markets/us/reference/deleteallorders-1>.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CancelOrderResult {
     pub id: String,

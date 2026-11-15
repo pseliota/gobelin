@@ -29,10 +29,6 @@ impl Page for BarsPage {
 }
 
 impl AlpacaDataClient {
-    /// Returns one page of historical bars; pass the previous page's token to continue.
-    ///
-    /// The request's `limit` counts bars across all symbols, so a page of a
-    /// multi-symbol request can omit symbols that appear on later pages.
     pub fn get_stock_bars(
         &self,
         req: &BarsRequest,
@@ -46,8 +42,6 @@ impl AlpacaDataClient {
         self.transport.fetch(request)
     }
 
-    /// Returns every page of historical bars, fetching each when the iterator is advanced.
-    /// The iterator ends after the last page or after yielding the first error.
     pub fn stock_bars_pages<'a>(
         &'a self,
         req: &'a BarsRequest,
@@ -103,7 +97,6 @@ impl AlpacaDataClient {
         Ok(request.query(&[("symbols", symbols.join(","))]))
     }
 
-    /// Starts a GET under `v2/stocks` carrying the configured feed.
     fn stock_request(&self, segments: &[&str]) -> Result<GetRequest, ClientError> {
         let path = [&["v2", "stocks"], segments].concat();
         let mut request = self.transport.get(&path)?;

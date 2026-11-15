@@ -1,8 +1,3 @@
-//! Wire models for Alpaca's Market Data API.
-//!
-//! Prices are JSON numbers and are held as `f64`. Timestamps stay RFC 3339 strings.
-//! Unknown response fields are ignored.
-
 mod bar;
 mod quote;
 mod request;

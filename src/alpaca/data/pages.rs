@@ -2,7 +2,6 @@ use std::{marker::PhantomData, mem};
 
 use crate::transport::ClientError;
 
-/// A response that may point to a following page.
 pub(super) trait Page {
     fn next_page_token(&self) -> Option<&str>;
 }
@@ -13,9 +12,6 @@ enum State {
     Done,
 }
 
-/// Lazily fetches pages by passing each page's token to the next fetch.
-/// Ends after a page without a token and after the first error.
-/// A page whose token repeats the one it was fetched with is an invalid response.
 pub(super) struct Pages<P, F> {
     fetch: F,
     state: State,
@@ -56,7 +52,6 @@ where
             .and_then(Page::next_page_token)
             .filter(|token| !token.is_empty());
         match next {
-            // Following a token that points to itself would never end.
             Some(next) if token.as_deref() == Some(next) => {
                 return Some(Err(ClientError::InvalidResponse));
             }
@@ -83,7 +78,6 @@ mod tests {
         }
     }
 
-    // Serves the scripted results in order and records the token of every call.
     fn scripted(
         results: Vec<Result<Numbered, ClientError>>,
         calls: &mut Vec<Option<String>>,

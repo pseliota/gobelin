@@ -1,5 +1,3 @@
-//! Blocking HTTP access to Alpaca's Market Data API.
-
 pub mod models;
 
 mod pages;
@@ -16,17 +14,10 @@ const DATA_URL: &str = "https://data.alpaca.markets/";
 
 #[derive(Debug, Clone, Default)]
 pub struct DataClientConfig {
-    /// Feed sent with every stock request. `None` leaves the choice to Alpaca.
     pub feed: Option<Feed>,
     pub retry: RetryPolicy,
 }
 
-/// A reusable market data client with a 20-second timeout per attempt.
-///
-/// Failed attempts are retried as configured by [`RetryPolicy`], sleeping on the
-/// calling thread. A call can block for up to `max_attempts` timeouts plus
-/// `max_attempts - 1` waits of `max_delay`: 120 seconds with the default policy.
-/// Credentials and response bodies are not logged.
 pub struct AlpacaDataClient {
     transport: RetryingTransport,
     feed: Option<Feed>,

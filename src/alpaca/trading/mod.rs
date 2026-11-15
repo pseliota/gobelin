@@ -1,5 +1,3 @@
-//! Blocking HTTP access to Alpaca's paper Trading API.
-
 pub mod models;
 
 use reqwest::{Method, StatusCode, Url, blocking::RequestBuilder};
@@ -14,10 +12,6 @@ use crate::transport::{self, ClientError, Transport};
 
 const PAPER_URL: &str = "https://paper-api.alpaca.markets/v2/";
 
-/// A reusable paper-only client with a 20-second request timeout.
-/// Every request is sent once: redirects and retries are disabled.
-/// Credentials and response bodies are not logged.
-/// Request models are serialized as supplied; Alpaca validates trading constraints.
 pub struct AlpacaTradingClient {
     transport: Transport,
 }
@@ -52,7 +46,6 @@ impl AlpacaTradingClient {
         self.json(self.request(Method::GET, &["positions", symbol_or_id])?)
     }
 
-    /// Returns one page. Pagination remains explicit through the supplied filters.
     pub fn list_orders(&self, filters: &ListOrdersRequest) -> Result<Vec<Order>, ClientError> {
         self.json(self.request(Method::GET, &["orders"])?.query(filters))
     }
@@ -71,13 +64,10 @@ impl AlpacaTradingClient {
         )
     }
 
-    /// Submits a paper order. A transport failure does not prove submission failed;
-    /// reconcile using a caller-supplied client_order_id before retrying.
     pub fn create_order(&self, order: &CreateOrderRequest) -> Result<Order, ClientError> {
         self.json(self.request(Method::POST, &["orders"])?.json(order))
     }
 
-    /// Requests replacement; acceptance does not guarantee the old order was replaced.
     pub fn replace_order(
         &self,
         order_id: &str,
@@ -89,7 +79,6 @@ impl AlpacaTradingClient {
         )
     }
 
-    /// Requests cancellation. HTTP 204 acknowledges the request, not final order state.
     pub fn cancel_order(&self, order_id: &str) -> Result<(), ClientError> {
         self.transport.send(
             self.request(Method::DELETE, &["orders", order_id])?,
@@ -98,7 +87,6 @@ impl AlpacaTradingClient {
         Ok(())
     }
 
-    /// Each result must be checked individually; HTTP 207 is not universal success.
     pub fn cancel_all_orders(&self) -> Result<Vec<CancelOrderResult>, ClientError> {
         let response = self.transport.send(
             self.request(Method::DELETE, &["orders"])?,

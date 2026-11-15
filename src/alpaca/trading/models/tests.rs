@@ -265,7 +265,6 @@ fn deserialize_accepts_optional_order_fields_when_values_are_null() {
 fn deserialize_preserves_empty_identifiers_when_order_is_multileg() {
     let mut response = order_response();
     response["order_class"] = json!("mleg");
-    // Alpaca supplies empty top-level fields for multi-leg orders.
     response["symbol"] = json!("");
     response["side"] = json!("");
     response["asset_class"] = json!("");

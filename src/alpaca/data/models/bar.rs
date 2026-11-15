@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Deserializer};
 
-/// Aggregated OHLCV bar.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Bar {
     #[serde(rename = "t")]
@@ -23,10 +22,8 @@ pub struct Bar {
     pub vwap: f64,
 }
 
-/// One page of historical bars keyed by symbol.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct BarsPage {
-    // Alpaca sends `null` instead of an empty object when a page has no bars.
     #[serde(default, deserialize_with = "null_as_empty")]
     pub bars: HashMap<String, Vec<Bar>>,
     pub next_page_token: Option<String>,

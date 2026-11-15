@@ -1,8 +1,3 @@
-//! Wire models for FRED API version 1.
-//!
-//! Dates stay `YYYY-MM-DD` strings. Observation values stay strings as sent.
-//! Unknown response fields are ignored.
-
 mod observation;
 mod request;
 mod series;
@@ -14,7 +9,6 @@ pub use request::{
 };
 pub use series::{Series, SeriesPage};
 
-/// Returns the offset after a page of `items`, or `None` when nothing remains.
 fn next_offset(offset: u32, items: usize, count: u32) -> Option<u32> {
     if items == 0 {
         return None;

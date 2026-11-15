@@ -1,7 +1,5 @@
 use serde::Deserialize;
 
-/// Response from `GET /v2/account`.
-/// See <https://docs.alpaca.markets/reference/getaccount-1>.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Account {
     pub id: String,
@@ -41,7 +39,6 @@ pub struct Account {
     pub balance_asof: Option<String>,
     pub intraday_adjustments: Option<String>,
     pub pending_reg_taf_fees: Option<String>,
-    // Legacy fields are absent from newer intraday-margin responses.
     pub daytrading_buying_power: Option<String>,
     pub pattern_day_trader: Option<bool>,
     pub daytrade_count: Option<u32>,

@@ -1,8 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// Order response, including nested bracket or multi-leg orders.
-/// Empty strings in multi-leg responses are preserved rather than normalized.
-/// See <https://docs.alpaca.markets/reference/postorder>.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Order {
     pub id: String,
@@ -106,8 +103,6 @@ pub enum SortDirection {
     Desc,
 }
 
-/// JSON body for `POST /v2/orders`, not a validated trading instruction.
-/// Exactly one of qty/notional is needed; other requirements depend on order class/type.
 #[derive(Debug, Clone, Serialize)]
 pub struct CreateOrderRequest {
     #[serde(rename = "type")]
@@ -169,7 +164,6 @@ pub struct OrderLegRequest {
     pub position_intent: Option<PositionIntent>,
 }
 
-/// Elite Smart Router parameters; eligibility and algorithm rules are not validated here.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct AdvancedInstructions {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -186,9 +180,6 @@ pub struct AdvancedInstructions {
     pub max_percentage: Option<String>,
 }
 
-/// JSON body for `PATCH /v2/orders/{order_id}`. Unset fields remain unchanged.
-/// Notional is IPO-only and mutually exclusive with qty.
-/// See <https://docs.alpaca.markets/us/reference/patchorderbyorderid-1>.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ReplaceOrderRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -209,14 +200,10 @@ pub struct ReplaceOrderRequest {
     pub advanced_instructions: Option<AdvancedInstructions>,
 }
 
-/// Query parameters for `GET /v2/orders`. Symbols and asset classes are comma-separated.
-/// Timestamp filters and order-ID filters must not be combined.
-/// See <https://docs.alpaca.markets/us/reference/getallorders-1>.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ListOrdersRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<QueryOrderStatus>,
-    /// Maximum 500; Alpaca defaults to 50 when omitted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -1,6 +1,5 @@
 use serde::Deserialize;
 
-/// One dated value of a series.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Observation {
     pub realtime_start: String,
@@ -10,8 +9,6 @@ pub struct Observation {
 }
 
 impl Observation {
-    /// Returns the value as a finite number, or `None` for FRED's missing marker `"."`
-    /// and any other non-numeric text.
     pub fn numeric_value(&self) -> Option<f64> {
         self.value
             .parse::<f64>()
@@ -20,7 +17,6 @@ impl Observation {
     }
 }
 
-/// One page of observations of a series.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct ObservationsPage {
     pub realtime_start: String,
@@ -38,7 +34,6 @@ pub struct ObservationsPage {
 }
 
 impl ObservationsPage {
-    /// Returns the offset of the next page, or `None` when this page is empty or the last.
     pub fn next_offset(&self) -> Option<u32> {
         super::next_offset(self.offset, self.observations.len(), self.count)
     }

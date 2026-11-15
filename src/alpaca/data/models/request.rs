@@ -1,6 +1,5 @@
 use serde::{Serialize, Serializer};
 
-/// Chronological ordering of results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SortDirection {
@@ -8,7 +7,6 @@ pub enum SortDirection {
     Desc,
 }
 
-/// Source of stock market data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Feed {
@@ -20,7 +18,6 @@ pub enum Feed {
     Overnight,
 }
 
-/// Corporate action adjustment applied to bars.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Adjustment {
     Raw,
@@ -48,7 +45,6 @@ impl Serialize for Adjustment {
     }
 }
 
-/// Query parameters for historical bars. Values are sent as supplied.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct BarsRequest {
     #[serde(serialize_with = "comma_joined_symbols")]

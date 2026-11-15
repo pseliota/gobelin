@@ -7,7 +7,6 @@ pub enum SortOrder {
     Desc,
 }
 
-/// Transformation applied to observation values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum Units {
     #[serde(rename = "lin")]
@@ -30,7 +29,6 @@ pub enum Units {
     NaturalLog,
 }
 
-/// Frequency to aggregate observations to; it cannot be finer than the series' own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum Frequency {
     #[serde(rename = "d")]
@@ -67,7 +65,6 @@ pub enum Frequency {
     BiweeklyEndingMonday,
 }
 
-/// How observations are combined when aggregating to a lower frequency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum AggregationMethod {
     #[serde(rename = "avg")]
@@ -103,7 +100,6 @@ pub enum SearchOrderBy {
     GroupPopularity,
 }
 
-/// Series attribute that `filter_value` is matched against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FilterVariable {
@@ -112,7 +108,6 @@ pub enum FilterVariable {
     SeasonalAdjustment,
 }
 
-/// Query parameters for the observations of one series. Values are sent as supplied.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ObservationsRequest {
     pub series_id: String,
@@ -140,7 +135,6 @@ pub struct ObservationsRequest {
     pub aggregation_method: Option<AggregationMethod>,
 }
 
-/// Query parameters for a series search. Values are sent as supplied.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct SearchRequest {
     pub search_text: String,
