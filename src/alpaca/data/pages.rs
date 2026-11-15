@@ -15,6 +15,7 @@ enum State {
 
 /// Lazily fetches pages by passing each page's token to the next fetch.
 /// Ends after a page without a token and after the first error.
+/// A page whose token repeats the one it was fetched with is an invalid response.
 pub(super) struct Pages<P, F> {
     fetch: F,
     state: State,
@@ -54,8 +55,13 @@ where
             .ok()
             .and_then(Page::next_page_token)
             .filter(|token| !token.is_empty());
-        if let Some(next) = next {
-            self.state = State::Next(next.to_owned());
+        match next {
+            // Following a token that points to itself would never end.
+            Some(next) if token.as_deref() == Some(next) => {
+                return Some(Err(ClientError::InvalidResponse));
+            }
+            Some(next) => self.state = State::Next(next.to_owned()),
+            None => {}
         }
         Some(result)
     }
@@ -147,6 +153,20 @@ mod tests {
     fn next_yields_error_once_when_fetch_fails() {
         let mut calls = Vec::new();
         let script = vec![page(1, Some("a")), Err(ClientError::InvalidResponse)];
+
+        let pages: Vec<_> = Pages::new(scripted(script, &mut calls)).collect();
+
+        assert_eq!(
+            pages,
+            [page(1, Some("a")), Err(ClientError::InvalidResponse)]
+        );
+        assert_eq!(calls.len(), 2);
+    }
+
+    #[test]
+    fn next_yields_invalid_response_when_page_repeats_its_token() {
+        let mut calls = Vec::new();
+        let script = vec![page(1, Some("a")), page(2, Some("a"))];
 
         let pages: Vec<_> = Pages::new(scripted(script, &mut calls)).collect();
 

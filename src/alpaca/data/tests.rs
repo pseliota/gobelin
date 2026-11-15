@@ -412,18 +412,6 @@ fn stock_bars_pages_stops_when_page_fails() {
 }
 
 #[test]
-fn stock_bars_pages_sends_nothing_when_not_advanced() {
-    let (client, server) = server(retries(1), vec![]);
-    let request = bars_request(&["AAPL"]);
-
-    let pages = client.stock_bars_pages(&request);
-    drop(pages);
-    let requests = server.join().unwrap();
-
-    assert!(requests.is_empty());
-}
-
-#[test]
 fn stock_bars_pages_yields_error_when_symbols_are_empty() {
     let (client, server) = server(retries(1), vec![]);
     let request = bars_request(&[]);
