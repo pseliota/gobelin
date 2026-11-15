@@ -1,6 +1,6 @@
+use super::models::SortDirection;
 use super::models::{Adjustment, BarsRequest};
 use super::*;
-use crate::alpaca::models::SortDirection;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,

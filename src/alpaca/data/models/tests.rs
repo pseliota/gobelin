@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use super::*;
-use crate::alpaca::models::SortDirection;
 use serde_json::{Value, json};
 
 const LATEST_BARS: &str = r#"{"bars":{"AAPL":{"c":172.79,"h":172.81,"l":172.78,"n":20,"o":172.81,"t":"2022-08-17T08:58:00Z","v":1002,"vw":172.791417},"TSLA":{"c":914.3,"h":914.3,"l":914.3,"n":20,"o":914.3,"t":"2022-08-17T08:57:00Z","v":751,"vw":914.294634}}}"#;
