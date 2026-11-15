@@ -1,4 +1,4 @@
-use std::{net::TcpListener, time::Duration};
+use std::time::Duration;
 
 use super::models::fixtures::{OBSERVATIONS, SEARCH, SERIES};
 use super::models::{
@@ -220,12 +220,8 @@ fn get_series_omits_key_from_error_when_status_is_400() {
 }
 
 #[test]
-fn get_series_omits_key_from_error_when_server_is_unreachable() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let base_url = Url::parse(&format!("http://{address}/")).unwrap();
-    let client = FredClient::build(API_KEY, base_url, retries(2)).unwrap();
+fn get_series_omits_key_from_error_when_connection_closes_without_response() {
+    let (client, _server) = server(retries(1), vec![Reply::Close]);
 
     let error = client.get_series("GNPCA").unwrap_err();
 
