@@ -9,13 +9,14 @@ use self::models::{
     Account, Asset, CalendarDay, CalendarRequest, CancelOrderResult, Clock, CreateOrderRequest,
     ListAssetsRequest, ListOrdersRequest, Order, Position, ReplaceOrderRequest,
 };
-use super::ClientError;
-use super::transport::{self, Transport};
+use super::credential_headers;
+use crate::transport::{self, ClientError, Transport};
 
 const PAPER_URL: &str = "https://paper-api.alpaca.markets/v2/";
 
 /// A reusable paper-only client with a 20-second request timeout.
-/// Redirects and retries are disabled. Credentials and response bodies are not logged.
+/// Every request is sent once: redirects and retries are disabled.
+/// Credentials and response bodies are not logged.
 /// Request models are serialized as supplied; Alpaca validates trading constraints.
 pub struct AlpacaTradingClient {
     transport: Transport,
@@ -27,7 +28,7 @@ impl AlpacaTradingClient {
     }
 
     fn build(key: &str, secret: &str, base_url: Url) -> Result<Self, ClientError> {
-        let transport = Transport::new(key, secret, base_url)?;
+        let transport = Transport::new(base_url, credential_headers(key, secret)?)?;
         Ok(Self { transport })
     }
 
