@@ -2,6 +2,7 @@
 
 pub mod alpaca;
 pub mod config;
+pub mod fred;
 
 mod transport;
 
