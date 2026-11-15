@@ -1,5 +1,4 @@
 use super::*;
-use crate::transport::testing::query_pairs;
 use serde_json::{Value, json};
 
 #[test]
@@ -450,8 +449,14 @@ fn serialize_encodes_order_query_when_filters_are_supplied() {
         symbols: Some("AAPL,MSFT".into()),
         ..Default::default()
     };
+    let client = reqwest::blocking::Client::new();
 
-    let pairs: std::collections::HashMap<_, _> = query_pairs(&filters).into_iter().collect();
+    let request = client
+        .get("http://localhost/v2/orders")
+        .query(&filters)
+        .build()
+        .unwrap();
+    let pairs: std::collections::HashMap<_, _> = request.url().query_pairs().into_owned().collect();
 
     assert_eq!(pairs.len(), 5);
     assert_eq!(pairs["symbols"], "AAPL,MSFT");
@@ -468,8 +473,14 @@ fn serialize_encodes_asset_query_when_filters_are_supplied() {
         attributes: Some("ipo,has_options".into()),
         ..Default::default()
     };
+    let client = reqwest::blocking::Client::new();
 
-    let pairs: std::collections::HashMap<_, _> = query_pairs(&filters).into_iter().collect();
+    let request = client
+        .get("http://localhost/v2/assets")
+        .query(&filters)
+        .build()
+        .unwrap();
+    let pairs: std::collections::HashMap<_, _> = request.url().query_pairs().into_owned().collect();
 
     assert_eq!(pairs.len(), 2);
     assert_eq!(pairs["asset_class"], "us_equity");

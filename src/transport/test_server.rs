@@ -6,9 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use url::Url;
-
-use super::RecordedRequest;
+use reqwest::Url;
 
 pub(crate) enum Reply {
     Response {
@@ -18,6 +16,33 @@ pub(crate) enum Reply {
     },
     Close,
     Stall,
+}
+
+pub(crate) struct RecordedRequest {
+    pub(crate) method: String,
+    pub(crate) target: String,
+    pub(crate) headers: HashMap<String, String>,
+    pub(crate) body: Vec<u8>,
+}
+
+impl RecordedRequest {
+    pub(crate) fn path(&self) -> &str {
+        self.target.split('?').next().unwrap()
+    }
+
+    pub(crate) fn query(&self) -> Vec<(String, String)> {
+        Url::parse(&format!("http://localhost{}", self.target))
+            .unwrap()
+            .query_pairs()
+            .into_owned()
+            .collect()
+    }
+
+    pub(crate) fn param(&self, name: &str) -> Option<String> {
+        self.query()
+            .into_iter()
+            .find_map(|(key, value)| (key == name).then_some(value))
+    }
 }
 
 pub(crate) struct Recording(JoinHandle<Vec<RecordedRequest>>);

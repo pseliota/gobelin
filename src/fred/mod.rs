@@ -2,12 +2,10 @@ pub mod models;
 
 mod series;
 
+use reqwest::{Url, header::HeaderMap};
 use serde::{Serialize, de::DeserializeOwned};
-use url::Url;
 
-use crate::transport::{
-    ClientError, Headers, HttpExecutor, RetryPolicy, RetryingTransport, Transport, TransportConfig,
-};
+use crate::transport::{ClientError, RetryPolicy, RetryingTransport, Transport, TransportConfig};
 
 const FRED_URL: &str = "https://api.stlouisfed.org/";
 
@@ -24,20 +22,15 @@ pub struct FredClient {
 
 impl FredClient {
     pub fn new(api_key: &str, config: FredConfig) -> Result<Self, ClientError> {
-        let executor = config.transport.executor()?;
-        Self::with_executor(api_key, config, executor)
+        let base_url = Url::parse(FRED_URL).expect("valid FRED URL");
+        Self::build(api_key, base_url, config)
     }
 
-    fn with_executor(
-        api_key: &str,
-        config: FredConfig,
-        executor: Box<dyn HttpExecutor>,
-    ) -> Result<Self, ClientError> {
+    fn build(api_key: &str, base_url: Url, config: FredConfig) -> Result<Self, ClientError> {
         if api_key.trim().is_empty() {
             return Err(ClientError::InvalidCredentials);
         }
-        let base_url = Url::parse(FRED_URL).expect("valid FRED URL");
-        let transport = Transport::new(base_url, Headers::default(), executor);
+        let transport = Transport::new(base_url, HeaderMap::new(), &config.transport)?;
         Ok(Self {
             transport: RetryingTransport::new(transport, config.retry, None),
             api_key: api_key.to_owned(),
@@ -52,8 +45,8 @@ impl FredClient {
         let request = self
             .transport
             .get(segments)?
-            .query(query)?
-            .query(&[("api_key", self.api_key.as_str()), ("file_type", "json")])?;
+            .query(query)
+            .query(&[("api_key", self.api_key.as_str()), ("file_type", "json")]);
         self.transport.fetch(request)
     }
 }

@@ -115,9 +115,13 @@ mod tests {
             date_type: Some(CalendarDateType::Settlement),
         };
 
-        let pairs: std::collections::HashMap<_, _> = crate::transport::testing::query_pairs(&query)
-            .into_iter()
-            .collect();
+        let request = reqwest::blocking::Client::new()
+            .get("http://localhost/v2/calendar")
+            .query(&query)
+            .build()
+            .unwrap();
+        let pairs: std::collections::HashMap<_, _> =
+            request.url().query_pairs().into_owned().collect();
 
         assert_eq!(pairs.len(), 3);
         assert_eq!(pairs["start"], "2025-01-02");

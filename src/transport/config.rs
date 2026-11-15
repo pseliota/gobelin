@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use super::{ClientError, executor::ReqwestExecutor, http::HttpExecutor};
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransportConfig {
     pub timeout: Duration,
@@ -19,12 +17,6 @@ impl Default for TransportConfig {
     }
 }
 
-impl TransportConfig {
-    pub(crate) fn executor(&self) -> Result<Box<dyn HttpExecutor>, ClientError> {
-        Ok(Box::new(ReqwestExecutor::new(self)?))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -39,26 +31,5 @@ mod tests {
             config.user_agent,
             format!("gobelin/{}", env!("CARGO_PKG_VERSION"))
         );
-    }
-
-    #[test]
-    fn executor_builds_executor_when_config_is_default() {
-        let config = TransportConfig::default();
-
-        let executor = config.executor();
-
-        assert!(executor.is_ok());
-    }
-
-    #[test]
-    fn executor_reports_initialization_when_user_agent_is_invalid() {
-        let config = TransportConfig {
-            user_agent: "gobelin\nagent".into(),
-            ..Default::default()
-        };
-
-        let error = config.executor().err();
-
-        assert_eq!(error, Some(ClientError::Initialization));
     }
 }

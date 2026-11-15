@@ -35,9 +35,9 @@ impl AlpacaDataClient {
         page_token: Option<&str>,
     ) -> Result<BarsPage, ClientError> {
         validate_symbols(&req.symbols)?;
-        let mut request = self.stock_request(&["bars"])?.query(req)?;
+        let mut request = self.stock_request(&["bars"])?.query(req);
         if let Some(token) = page_token {
-            request = request.query(&[("page_token", token)])?;
+            request = request.query(&[("page_token", token)]);
         }
         self.transport.fetch(request)
     }
@@ -94,14 +94,14 @@ impl AlpacaDataClient {
     ) -> Result<GetRequest, ClientError> {
         validate_symbols(symbols)?;
         let request = self.stock_request(segments)?;
-        request.query(&[("symbols", symbols.join(","))])
+        Ok(request.query(&[("symbols", symbols.join(","))]))
     }
 
     fn stock_request(&self, segments: &[&str]) -> Result<GetRequest, ClientError> {
         let path = [&["v2", "stocks"], segments].concat();
         let mut request = self.transport.get(&path)?;
         if let Some(feed) = self.feed {
-            request = request.query(&[("feed", feed)])?;
+            request = request.query(&[("feed", feed)]);
         }
         Ok(request)
     }

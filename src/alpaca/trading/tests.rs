@@ -1,15 +1,34 @@
 use super::models::{OrderSide, OrderType, QueryOrderStatus, TimeInForce};
 use super::*;
-use crate::transport::testing::scripted::{Recording, Reply, executor, interrupted, response};
+use crate::transport::test_server::{self, Recording, Reply};
 use serde_json::{Value, json};
 
-fn server(status: u16, body: Value) -> (AlpacaTradingClient, Recording) {
-    scripted(vec![response(status, &[], &body.to_string())])
+fn server(status: &'static str, body: Value) -> (AlpacaTradingClient, Recording) {
+    raw_server(status, &body.to_string(), "")
 }
 
-fn scripted(script: Vec<Reply>) -> (AlpacaTradingClient, Recording) {
-    let (executor, recording) = executor(script);
-    let client = AlpacaTradingClient::with_executor("test-key", "test-secret", executor).unwrap();
+fn raw_server(
+    status: &'static str,
+    body: &str,
+    extra_headers: &'static str,
+) -> (AlpacaTradingClient, Recording) {
+    let reply = if status.is_empty() {
+        Reply::Close
+    } else {
+        Reply::Response {
+            status,
+            headers: extra_headers,
+            body: body.to_owned(),
+        }
+    };
+    let (base_url, recording) = test_server::serve(vec![reply]);
+    let client = AlpacaTradingClient::build(
+        "test-key",
+        "test-secret",
+        base_url.join("v2/").unwrap(),
+        TradingClientConfig::default(),
+    )
+    .unwrap();
     (client, recording)
 }
 
@@ -71,7 +90,7 @@ fn new_rejects_credentials_when_key_is_blank() {
 
 #[test]
 fn get_account_authenticates_request_when_fetching_account() {
-    let (client, server) = server(200, json!({"id": "account-1", "status": "ACTIVE"}));
+    let (client, server) = server("200 OK", json!({"id": "account-1", "status": "ACTIVE"}));
 
     let account = client.get_account().unwrap();
     let request = server.request();
@@ -85,7 +104,7 @@ fn get_account_authenticates_request_when_fetching_account() {
 
 #[test]
 fn list_assets_encodes_filters_when_query_is_supplied() {
-    let (client, server) = server(200, json!([]));
+    let (client, server) = server("200 OK", json!([]));
     let filters = ListAssetsRequest {
         asset_class: Some("us_equity".into()),
         ..Default::default()
@@ -101,7 +120,7 @@ fn list_assets_encodes_filters_when_query_is_supplied() {
 
 #[test]
 fn get_asset_encodes_identifier_when_symbol_contains_reserved_characters() {
-    let (client, server) = server(404, json!({}));
+    let (client, server) = server("404 Not Found", json!({}));
 
     let result = client.get_asset("BTC/USD?x=1#fragment");
     let request = server.request();
@@ -113,7 +132,7 @@ fn get_asset_encodes_identifier_when_symbol_contains_reserved_characters() {
 #[test]
 fn get_position_uses_position_path_when_identifier_is_supplied() {
     let (client, server) = server(
-        200,
+        "200 OK",
         json!({
             "asset_id": "asset-1", "symbol": "AAPL", "exchange": "NASDAQ",
             "asset_class": "us_equity", "qty": "2", "side": "long",
@@ -130,7 +149,7 @@ fn get_position_uses_position_path_when_identifier_is_supplied() {
 
 #[test]
 fn list_positions_returns_empty_list_when_no_positions_exist() {
-    let (client, server) = server(200, json!([]));
+    let (client, server) = server("200 OK", json!([]));
 
     let positions = client.list_positions().unwrap();
     let request = server.request();
@@ -141,7 +160,7 @@ fn list_positions_returns_empty_list_when_no_positions_exist() {
 
 #[test]
 fn list_orders_sends_filters_when_requesting_closed_orders() {
-    let (client, server) = server(200, json!([order_response()]));
+    let (client, server) = server("200 OK", json!([order_response()]));
     let filters = ListOrdersRequest {
         status: Some(QueryOrderStatus::Closed),
         ..Default::default()
@@ -156,7 +175,7 @@ fn list_orders_sends_filters_when_requesting_closed_orders() {
 
 #[test]
 fn get_order_requests_nested_legs_when_enabled() {
-    let (client, server) = server(200, order_response());
+    let (client, server) = server("200 OK", order_response());
 
     let order = client.get_order("order-1", true).unwrap();
     let request = server.request();
@@ -167,7 +186,7 @@ fn get_order_requests_nested_legs_when_enabled() {
 
 #[test]
 fn get_order_by_client_id_encodes_query_when_id_contains_ampersand() {
-    let (client, server) = server(200, order_response());
+    let (client, server) = server("200 OK", order_response());
 
     client.get_order_by_client_id("client&1").unwrap();
     let request = server.request();
@@ -180,7 +199,7 @@ fn get_order_by_client_id_encodes_query_when_id_contains_ampersand() {
 
 #[test]
 fn create_order_sends_json_when_submitting_market_order() {
-    let (client, server) = server(200, order_response());
+    let (client, server) = server("200 OK", order_response());
     let order = market_order();
 
     let result = client.create_order(&order).unwrap();
@@ -201,7 +220,7 @@ fn create_order_sends_json_when_submitting_market_order() {
 
 #[test]
 fn replace_order_sends_patch_when_price_changes() {
-    let (client, server) = server(200, order_response());
+    let (client, server) = server("200 OK", order_response());
     let replacement = ReplaceOrderRequest {
         limit_price: Some("155.00".into()),
         ..Default::default()
@@ -220,7 +239,7 @@ fn replace_order_sends_patch_when_price_changes() {
 
 #[test]
 fn cancel_order_accepts_empty_body_when_status_is_204() {
-    let (client, server) = scripted(vec![response(204, &[], "")]);
+    let (client, server) = raw_server("204 No Content", "", "");
 
     let result = client.cancel_order("order-1");
     let request = server.request();
@@ -233,7 +252,7 @@ fn cancel_order_accepts_empty_body_when_status_is_204() {
 #[test]
 fn cancel_all_orders_preserves_failures_when_results_are_mixed() {
     let (client, server) = server(
-        207,
+        "207 Multi-Status",
         json!([
             {"id": "order-1", "status": 200}, {"id": "order-2", "status": 500}
         ]),
@@ -250,7 +269,7 @@ fn cancel_all_orders_preserves_failures_when_results_are_mixed() {
 #[test]
 fn get_clock_decodes_response_when_market_is_closed() {
     let (client, server) = server(
-        200,
+        "200 OK",
         json!({
             "timestamp": "2025-01-02T08:00:00-05:00", "is_open": false,
             "next_open": "2025-01-02T09:30:00-05:00", "next_close": "2025-01-02T16:00:00-05:00"
@@ -266,7 +285,7 @@ fn get_clock_decodes_response_when_market_is_closed() {
 
 #[test]
 fn get_calendar_encodes_dates_when_range_is_supplied() {
-    let (client, server) = server(200, json!([]));
+    let (client, server) = server("200 OK", json!([]));
     let filters = CalendarRequest {
         start: Some("2025-01-02".into()),
         ..Default::default()
@@ -281,7 +300,10 @@ fn get_calendar_encodes_dates_when_range_is_supplied() {
 
 #[test]
 fn get_account_reports_status_without_body_when_authentication_fails() {
-    let (client, server) = server(401, json!({"message": "sensitive account information"}));
+    let (client, server) = server(
+        "401 Unauthorized",
+        json!({"message": "sensitive account information"}),
+    );
 
     let error = client.get_account().unwrap_err();
     server.request();
@@ -291,12 +313,8 @@ fn get_account_reports_status_without_body_when_authentication_fails() {
 }
 
 #[test]
-fn get_account_reports_status_when_server_redirects() {
-    let (client, server) = scripted(vec![response(
-        302,
-        &[("Location", "https://example.invalid/")],
-        "",
-    )]);
+fn get_account_rejects_redirect_when_server_returns_location() {
+    let (client, server) = raw_server("302 Found", "", "Location: https://example.invalid/\r\n");
 
     let error = client.get_account().unwrap_err();
     server.request();
@@ -306,7 +324,7 @@ fn get_account_reports_status_when_server_redirects() {
 
 #[test]
 fn get_account_reports_invalid_response_when_json_is_malformed() {
-    let (client, server) = scripted(vec![response(200, &[], "not json")]);
+    let (client, server) = raw_server("200 OK", "not json", "");
 
     let error = client.get_account().unwrap_err();
     server.request();
@@ -326,8 +344,8 @@ fn get_order_rejects_identifier_when_path_is_dot_segment() {
 }
 
 #[test]
-fn get_account_reports_transport_failure_when_request_is_interrupted() {
-    let (client, server) = scripted(vec![interrupted()]);
+fn get_account_reports_transport_failure_when_server_closes_without_response() {
+    let (client, server) = raw_server("", "", "");
 
     let error = client.get_account().unwrap_err();
     server.request();
@@ -337,7 +355,7 @@ fn get_account_reports_transport_failure_when_request_is_interrupted() {
 
 #[test]
 fn cancel_order_reports_rejection_when_order_is_not_cancelable() {
-    let (client, server) = server(422, json!({}));
+    let (client, server) = server("422 Unprocessable Entity", json!({}));
 
     let error = client.cancel_order("order-1").unwrap_err();
     server.request();
@@ -347,7 +365,7 @@ fn cancel_order_reports_rejection_when_order_is_not_cancelable() {
 
 #[test]
 fn get_account_does_not_retry_when_status_is_503() {
-    let (client, server) = server(503, json!({}));
+    let (client, server) = server("503 Service Unavailable", json!({}));
 
     let error = client.get_account().unwrap_err();
     let request = server.request();
@@ -358,11 +376,32 @@ fn get_account_does_not_retry_when_status_is_503() {
 
 #[test]
 fn create_order_does_not_retry_when_status_is_503() {
-    let (client, server) = server(503, json!({}));
+    let (client, server) = server("503 Service Unavailable", json!({}));
 
     let error = client.create_order(&market_order()).unwrap_err();
     let request = server.request();
 
     assert_eq!(error, ClientError::HttpStatus { status: 503 });
     assert_eq!(request.method, "POST");
+}
+
+#[test]
+fn get_account_sends_user_agent_when_config_names_one() {
+    let (base_url, server) = test_server::serve(vec![Reply::Response {
+        status: "200 OK",
+        headers: "",
+        body: json!({"id": "account-1", "status": "ACTIVE"}).to_string(),
+    }]);
+    let config = TradingClientConfig {
+        transport: TransportConfig {
+            user_agent: "gobelin-test/1.0".into(),
+            ..Default::default()
+        },
+    };
+    let client = AlpacaTradingClient::build("test-key", "test-secret", base_url, config).unwrap();
+
+    client.get_account().unwrap();
+    let request = server.request();
+
+    assert_eq!(request.headers["user-agent"], "gobelin-test/1.0");
 }
