@@ -1,13 +1,15 @@
 //! Blocking HTTP access to Alpaca's paper Trading API.
 
+pub mod models;
+
 use reqwest::{Method, StatusCode, Url, blocking::RequestBuilder};
 use serde::de::DeserializeOwned;
 
-pub use super::error::ClientError;
-use super::models::{
+use self::models::{
     Account, Asset, CalendarDay, CalendarRequest, CancelOrderResult, Clock, CreateOrderRequest,
     ListAssetsRequest, ListOrdersRequest, Order, Position, ReplaceOrderRequest,
 };
+use super::ClientError;
 use super::transport::{self, Transport};
 
 const PAPER_URL: &str = "https://paper-api.alpaca.markets/v2/";
@@ -15,11 +17,11 @@ const PAPER_URL: &str = "https://paper-api.alpaca.markets/v2/";
 /// A reusable paper-only client with a 20-second request timeout.
 /// Redirects and retries are disabled. Credentials and response bodies are not logged.
 /// Request models are serialized as supplied; Alpaca validates trading constraints.
-pub struct AlpacaClient {
+pub struct AlpacaTradingClient {
     transport: Transport,
 }
 
-impl AlpacaClient {
+impl AlpacaTradingClient {
     pub fn new(key: &str, secret: &str) -> Result<Self, ClientError> {
         Self::build(key, secret, Url::parse(PAPER_URL).expect("valid paper URL"))
     }

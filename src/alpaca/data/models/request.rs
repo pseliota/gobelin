@@ -1,6 +1,12 @@
 use serde::{Serialize, Serializer};
 
-use crate::alpaca::models::SortDirection;
+/// Chronological ordering of results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
 
 /// Source of stock market data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

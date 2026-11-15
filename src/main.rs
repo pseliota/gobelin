@@ -1,6 +1,6 @@
 use std::{collections::HashMap, process::ExitCode};
 
-use gobelin::alpaca::client::AlpacaClient;
+use gobelin::alpaca::trading::AlpacaTradingClient;
 
 fn credential(names: &[&str], file_values: &HashMap<String, String>) -> Result<String, String> {
     let value = names
@@ -50,7 +50,7 @@ fn run() -> Result<(), String> {
         &file_values,
     )?;
 
-    let client = AlpacaClient::new(&key, &secret).map_err(|error| error.to_string())?;
+    let client = AlpacaTradingClient::new(&key, &secret).map_err(|error| error.to_string())?;
     let account = client.get_account().map_err(|error| error.to_string())?;
 
     println!("Alpaca paper account (read-only request)");

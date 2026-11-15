@@ -1,4 +1,4 @@
-use super::super::models::{OrderSide, OrderType, QueryOrderStatus, TimeInForce};
+use super::models::{OrderSide, OrderType, QueryOrderStatus, TimeInForce};
 use super::*;
 use serde_json::{Value, json};
 use std::{
@@ -16,7 +16,7 @@ struct RecordedRequest {
 }
 
 // One bounded loopback exchange; no credentials, proxies, or external services.
-fn server(status: &str, body: Value) -> (AlpacaClient, JoinHandle<RecordedRequest>) {
+fn server(status: &str, body: Value) -> (AlpacaTradingClient, JoinHandle<RecordedRequest>) {
     raw_server(status, &body.to_string(), "")
 }
 
@@ -24,7 +24,7 @@ fn raw_server(
     status: &str,
     body: &str,
     extra_headers: &str,
-) -> (AlpacaClient, JoinHandle<RecordedRequest>) {
+) -> (AlpacaTradingClient, JoinHandle<RecordedRequest>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
@@ -92,7 +92,7 @@ fn raw_server(
             body: bytes[header_end..header_end + length].to_vec(),
         }
     });
-    let client = AlpacaClient::build(
+    let client = AlpacaTradingClient::build(
         "test-key",
         "test-secret",
         Url::parse(&format!("http://{address}/v2/")).unwrap(),
@@ -112,21 +112,21 @@ fn order_response() -> Value {
 
 #[test]
 fn new_uses_paper_endpoint_when_credentials_are_valid() {
-    let client = AlpacaClient::new("test-key", "test-secret").unwrap();
+    let client = AlpacaTradingClient::new("test-key", "test-secret").unwrap();
 
     assert_eq!(client.transport.base_url().as_str(), PAPER_URL);
 }
 
 #[test]
 fn new_rejects_credentials_when_secret_contains_newline() {
-    let result = AlpacaClient::new("test-key", "secret\nvalue");
+    let result = AlpacaTradingClient::new("test-key", "secret\nvalue");
 
     assert!(matches!(result, Err(ClientError::InvalidCredentials)));
 }
 
 #[test]
 fn new_rejects_credentials_when_key_is_blank() {
-    let result = AlpacaClient::new(" ", "test-secret");
+    let result = AlpacaTradingClient::new(" ", "test-secret");
 
     assert!(matches!(result, Err(ClientError::InvalidCredentials)));
 }
@@ -396,7 +396,7 @@ fn get_account_reports_invalid_response_when_json_is_malformed() {
 
 #[test]
 fn get_order_rejects_identifier_when_path_is_dot_segment() {
-    let client = AlpacaClient::new("test-key", "test-secret").unwrap();
+    let client = AlpacaTradingClient::new("test-key", "test-secret").unwrap();
 
     let error = client.get_order("..", false).unwrap_err();
 

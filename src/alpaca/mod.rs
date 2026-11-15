@@ -1,8 +1,7 @@
-//! Alpaca API client and request/response models.
+//! Alpaca API clients and request/response models.
 
-pub mod client;
 pub mod data;
-pub mod models;
+pub mod trading;
 
 mod error;
 mod transport;
