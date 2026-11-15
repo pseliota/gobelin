@@ -1,0 +1,48 @@
+use serde::Deserialize;
+
+/// Response from `GET /v2/account`.
+/// See <https://docs.alpaca.markets/reference/getaccount-1>.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Account {
+    pub id: String,
+    pub status: String,
+    pub account_number: Option<String>,
+    pub crypto_status: Option<String>,
+    pub crypto_tier: Option<u32>,
+    pub currency: Option<String>,
+    pub cash: Option<String>,
+    pub equity: Option<String>,
+    pub buying_power: Option<String>,
+    pub effective_buying_power: Option<String>,
+    pub regt_buying_power: Option<String>,
+    pub non_marginable_buying_power: Option<String>,
+    pub options_buying_power: Option<String>,
+    pub accrued_fees: Option<String>,
+    pub pending_transfer_in: Option<String>,
+    pub pending_transfer_out: Option<String>,
+    pub portfolio_value: Option<String>,
+    pub trading_blocked: Option<bool>,
+    pub transfers_blocked: Option<bool>,
+    pub account_blocked: Option<bool>,
+    pub created_at: Option<String>,
+    pub trade_suspended_by_user: Option<bool>,
+    pub multiplier: Option<String>,
+    pub shorting_enabled: Option<bool>,
+    pub last_equity: Option<String>,
+    pub long_market_value: Option<String>,
+    pub short_market_value: Option<String>,
+    pub position_market_value: Option<String>,
+    pub initial_margin: Option<String>,
+    pub maintenance_margin: Option<String>,
+    pub last_maintenance_margin: Option<String>,
+    pub sma: Option<String>,
+    pub options_approved_level: Option<u32>,
+    pub options_trading_level: Option<u32>,
+    pub balance_asof: Option<String>,
+    pub intraday_adjustments: Option<String>,
+    pub pending_reg_taf_fees: Option<String>,
+    // Legacy fields are absent from newer intraday-margin responses.
+    pub daytrading_buying_power: Option<String>,
+    pub pattern_day_trader: Option<bool>,
+    pub daytrade_count: Option<u32>,
+}
