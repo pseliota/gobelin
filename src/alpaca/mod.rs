@@ -1,5 +1,3 @@
-//! Alpaca API clients and request/response models.
-
 pub mod data;
 pub mod trading;
 
@@ -7,7 +5,6 @@ use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::transport::ClientError;
 
-/// Builds the authentication headers sent with every Alpaca request.
 fn credential_headers(key: &str, secret: &str) -> Result<HeaderMap, ClientError> {
     let mut headers = HeaderMap::new();
     headers.insert("APCA-API-KEY-ID", credential_header(key)?);

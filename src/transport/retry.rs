@@ -1,13 +1,7 @@
 use std::time::Duration;
 
-/// Retry behaviour for GET requests that fail with a transport error, HTTP 429 or HTTP 5xx.
-///
-/// The delay doubles from `base_delay` after each attempt and is capped at `max_delay`.
-/// A 429 whose provider reports a rate-limit reset time waits until that time instead,
-/// and is not retried when the wait would exceed `max_delay`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryPolicy {
-    /// Total attempts including the first. Zero behaves as one.
     pub max_attempts: u32,
     pub base_delay: Duration,
     pub max_delay: Duration,
@@ -24,7 +18,6 @@ impl Default for RetryPolicy {
 }
 
 impl RetryPolicy {
-    /// A policy that never retries.
     pub fn none() -> Self {
         Self {
             max_attempts: 1,
@@ -32,8 +25,6 @@ impl RetryPolicy {
         }
     }
 
-    /// Returns how long to wait before the next attempt, or `None` to give up.
-    /// `attempts` counts the attempts already made, including the failed one.
     pub(super) fn delay(&self, attempts: u32, failure: Failure) -> Option<Duration> {
         if attempts >= self.max_attempts.max(1) {
             return None;
@@ -59,13 +50,11 @@ impl RetryPolicy {
     }
 }
 
-/// A failed attempt as seen by the retry decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Failure {
     Transport,
     Status {
         status: u16,
-        /// Time until the rate limit resets, when the response said so.
         reset_after: Option<Duration>,
     },
 }

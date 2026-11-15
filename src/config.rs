@@ -1,5 +1,3 @@
-//! Credentials read from the process environment and a `.env` file.
-
 use std::{collections::HashMap, error::Error, fmt, io::ErrorKind};
 
 const ALPACA_KEY: &[&str] = &["ALPACA_KEY", "ALPACA_API_KEY", "APCA_API_KEY_ID"];
@@ -11,14 +9,10 @@ const ALPACA_SECRET: &[&str] = &[
 ];
 const FRED_API_KEY: &[&str] = &["FRED_API_KEY"];
 
-/// Failures to find credentials; credential values are never included.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ConfigError {
-    /// No source sets a non-blank value; `name` is the variable to set.
-    Missing {
-        name: &'static str,
-    },
+    Missing { name: &'static str },
     UnreadableEnvFile,
     InvalidEnvFile,
 }
@@ -40,16 +34,12 @@ impl fmt::Display for ConfigError {
 
 impl Error for ConfigError {}
 
-/// Credential lookup that prefers environment values over `.env` values.
-/// Each credential accepts several variable names; blank values count as missing.
 pub struct Credentials {
     environment: HashMap<String, String>,
     file: HashMap<String, String>,
 }
 
 impl Credentials {
-    /// Reads the process environment and `.env` in the current directory without
-    /// changing the environment. A missing `.env` file counts as empty.
     pub fn load() -> Result<Self, ConfigError> {
         let environment = [ALPACA_KEY, ALPACA_SECRET, FRED_API_KEY]
             .concat()
@@ -66,22 +56,18 @@ impl Credentials {
         Ok(Self::new(environment, file))
     }
 
-    /// Builds the lookup from environment values and `.env` file values.
     pub fn new(environment: HashMap<String, String>, file: HashMap<String, String>) -> Self {
         Self { environment, file }
     }
 
-    /// Reads `ALPACA_KEY`, `ALPACA_API_KEY` or `APCA_API_KEY_ID`.
     pub fn alpaca_key(&self) -> Result<String, ConfigError> {
         self.credential(ALPACA_KEY)
     }
 
-    /// Reads `ALPACA_SECRET`, `ALPACA_SECRET_KEY`, `ALPACA_API_SECRET` or `APCA_API_SECRET_KEY`.
     pub fn alpaca_secret(&self) -> Result<String, ConfigError> {
         self.credential(ALPACA_SECRET)
     }
 
-    /// Reads `FRED_API_KEY`.
     pub fn fred_api_key(&self) -> Result<String, ConfigError> {
         self.credential(FRED_API_KEY)
     }

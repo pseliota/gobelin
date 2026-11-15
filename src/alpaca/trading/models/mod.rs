@@ -1,9 +1,3 @@
-//! Wire models for Alpaca's core Trading API endpoints.
-//!
-//! Decimal strings, identifiers, timestamps, and response enum values retain their
-//! wire representation. Unknown response fields are ignored. Request models omit
-//! unset fields but do not validate numeric syntax or cross-field trading rules.
-
 mod account;
 mod asset;
 mod cancellation;

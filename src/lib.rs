@@ -1,5 +1,3 @@
-//! Shared functionality for Gobelin.
-
 pub mod alpaca;
 pub mod config;
 pub mod fred;

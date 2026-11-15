@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// Asset returned by `/v2/assets`.
-/// See <https://docs.alpaca.markets/us/reference/get-v2-assets-1>.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Asset {
     pub id: String,
@@ -24,10 +22,8 @@ pub struct Asset {
     pub price_increment: Option<String>,
     pub margin_requirement_long: Option<String>,
     pub margin_requirement_short: Option<String>,
-    // Deprecated numeric maintenance_margin_requirement is intentionally omitted.
 }
 
-/// Query parameters for `GET /v2/assets`. Lists use comma-separated strings.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ListAssetsRequest {
     #[serde(skip_serializing_if = "Option::is_none")]

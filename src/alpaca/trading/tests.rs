@@ -7,7 +7,6 @@ fn server(status: &'static str, body: Value) -> (AlpacaTradingClient, Recording)
     raw_server(status, &body.to_string(), "")
 }
 
-// An empty status closes the connection without answering.
 fn raw_server(
     status: &'static str,
     body: &str,

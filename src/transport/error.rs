@@ -1,6 +1,5 @@
 use std::{error::Error, fmt};
 
-/// Sanitized failures; response bodies, URLs and credential values are never included.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ClientError {

@@ -1,6 +1,5 @@
 use serde::Deserialize;
 
-/// National best bid and offer.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Quote {
     #[serde(rename = "t")]

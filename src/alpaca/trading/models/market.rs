@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// US market clock from `GET /v2/clock`; timestamp offsets are preserved.
-/// See <https://docs.alpaca.markets/us/reference/legacyclock>.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Clock {
     pub timestamp: String,
@@ -10,22 +8,16 @@ pub struct Clock {
     pub next_close: String,
 }
 
-/// US market day from `GET /v2/calendar`, including early closures.
-/// Open/close times use HH:MM; session times use HHMM, in Eastern time.
-/// See <https://docs.alpaca.markets/us/reference/legacycalendar>.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CalendarDay {
     pub date: String,
     pub open: String,
     pub close: String,
-    // Optional for compatibility with older responses accepted by Alpaca's SDK.
     pub session_open: Option<String>,
     pub session_close: Option<String>,
     pub settlement_date: Option<String>,
 }
 
-/// Inclusive date filters for `GET /v2/calendar`.
-/// Omitted filters use the server defaults; date syntax is not validated here.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct CalendarRequest {
     #[serde(skip_serializing_if = "Option::is_none")]

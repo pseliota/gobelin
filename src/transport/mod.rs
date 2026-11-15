@@ -1,5 +1,3 @@
-//! Blocking HTTP plumbing shared by the API clients.
-
 mod error;
 mod retry;
 #[cfg(test)]
@@ -22,25 +20,20 @@ pub use self::error::ClientError;
 use self::retry::Failure;
 pub use self::retry::RetryPolicy;
 
-/// Reads the time until the rate limit resets from response headers, given the current time.
 pub(crate) type RateLimitHint = fn(&HeaderMap, SystemTime) -> Option<Duration>;
 
-/// A connection to one API base URL with a 20-second request timeout.
-/// Every request is sent once: redirects and retries are disabled.
 pub(crate) struct Transport {
     http: Client,
     base_url: Url,
 }
 
 impl Transport {
-    /// Sends `default_headers` with every request.
     pub(crate) fn new(base_url: Url, default_headers: HeaderMap) -> Result<Self, ClientError> {
         let mut builder = Client::builder()
             .default_headers(default_headers)
             .timeout(Duration::from_secs(20))
             .redirect(Policy::none())
             .retry(reqwest::retry::never());
-        // Local HTTP tests must not use system proxy settings.
         if base_url.scheme() == "http" {
             builder = builder.no_proxy();
         }
@@ -53,7 +46,6 @@ impl Transport {
         &self.base_url
     }
 
-    /// Starts a request to the base URL extended by the percent-encoded segments.
     pub(crate) fn request(
         &self,
         method: Method,
@@ -73,7 +65,6 @@ impl Transport {
         Ok(self.http.request(method, url))
     }
 
-    /// Sends the request and decodes the JSON body of a 200 response.
     pub(crate) fn json<T: DeserializeOwned>(
         &self,
         request: RequestBuilder,
@@ -81,7 +72,6 @@ impl Transport {
         decode(self.send(request, StatusCode::OK)?)
     }
 
-    /// Sends the request and fails unless the response has the expected status.
     pub(crate) fn send(
         &self,
         request: RequestBuilder,
@@ -97,18 +87,14 @@ impl Transport {
     }
 }
 
-/// A GET request; only [`RetryingTransport`] creates one.
 pub(crate) struct GetRequest(RequestBuilder);
 
 impl GetRequest {
-    /// Appends the serialized pairs to the query string.
     pub(crate) fn query<Q: Serialize + ?Sized>(self, query: &Q) -> Self {
         Self(self.0.query(query))
     }
 }
 
-/// A [`Transport`] that only sends GET requests and retries them as `policy` allows,
-/// sleeping on the calling thread.
 pub(crate) struct RetryingTransport {
     transport: Transport,
     policy: RetryPolicy,
@@ -116,7 +102,6 @@ pub(crate) struct RetryingTransport {
 }
 
 impl RetryingTransport {
-    /// Without a `rate_limit` hint, a 429 is retried with exponential backoff.
     pub(crate) fn new(
         transport: Transport,
         policy: RetryPolicy,
@@ -134,16 +119,12 @@ impl RetryingTransport {
         self.transport.base_url()
     }
 
-    /// Starts a GET to the base URL extended by the percent-encoded segments.
     pub(crate) fn get(&self, segments: &[&str]) -> Result<GetRequest, ClientError> {
         self.transport
             .request(Method::GET, segments)
             .map(GetRequest)
     }
 
-    /// Sends the request until it succeeds or the retry policy gives up,
-    /// then decodes the JSON body of the 200 response.
-    /// Returns the last attempt's error when it gives up.
     pub(crate) fn fetch<T: DeserializeOwned>(&self, request: GetRequest) -> Result<T, ClientError> {
         let mut attempts = 0;
         loop {
@@ -160,7 +141,6 @@ impl RetryingTransport {
         }
     }
 
-    /// Makes one attempt. A failure the retry policy may judge comes with its description.
     fn attempt<T: DeserializeOwned>(
         &self,
         request: RequestBuilder,
@@ -186,7 +166,6 @@ fn classify(error: ClientError) -> (ClientError, Option<Failure>) {
     (error, failure)
 }
 
-/// Sends the request and returns the response whatever its status.
 fn execute(request: RequestBuilder) -> Result<Response, ClientError> {
     request.send().map_err(|error| {
         if error.is_builder() {

@@ -19,11 +19,6 @@ impl FredClient {
             .ok_or(ClientError::InvalidResponse)
     }
 
-    /// Returns one page of observations; the server's default `limit` is 100000.
-    /// Pass the page's [`ObservationsPage::next_offset`] as `offset` to continue.
-    ///
-    /// Without `realtime_start` and `realtime_end` the latest revision is returned,
-    /// which can differ from the values known at an earlier date.
     pub fn get_observations(
         &self,
         req: &ObservationsRequest,
@@ -32,8 +27,6 @@ impl FredClient {
         self.fetch(&["fred", "series", "observations"], req)
     }
 
-    /// Returns one page of series matching the search.
-    /// Pass the page's [`SeriesPage::next_offset`] as `offset` to continue.
     pub fn search_series(&self, req: &SearchRequest) -> Result<SeriesPage, ClientError> {
         require(&req.search_text)?;
         self.fetch(&["fred", "series", "search"], req)

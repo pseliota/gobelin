@@ -2,7 +2,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::header::HeaderMap;
 
-/// Reads the time until the rate limit resets from Alpaca's `X-RateLimit-Reset` header.
 pub(super) fn reset_hint(headers: &HeaderMap, now: SystemTime) -> Option<Duration> {
     headers
         .get("x-ratelimit-reset")
@@ -10,8 +9,6 @@ pub(super) fn reset_hint(headers: &HeaderMap, now: SystemTime) -> Option<Duratio
         .and_then(|value| reset_after(value, now))
 }
 
-/// Parses an `X-RateLimit-Reset` value (UNIX epoch seconds) into the time remaining at `now`.
-/// Returns `None` when the value is malformed or not in the future.
 fn reset_after(header: &str, now: SystemTime) -> Option<Duration> {
     let seconds = header.trim().parse().ok()?;
     UNIX_EPOCH
