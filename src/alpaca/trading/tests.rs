@@ -22,9 +22,13 @@ fn raw_server(
         }
     };
     let (base_url, recording) = test_server::serve(vec![reply]);
-    let client =
-        AlpacaTradingClient::build("test-key", "test-secret", base_url.join("v2/").unwrap())
-            .unwrap();
+    let client = AlpacaTradingClient::build(
+        "test-key",
+        "test-secret",
+        base_url.join("v2/").unwrap(),
+        TradingClientConfig::default(),
+    )
+    .unwrap();
     (client, recording)
 }
 
@@ -62,21 +66,24 @@ fn market_order() -> CreateOrderRequest {
 
 #[test]
 fn new_uses_paper_endpoint_when_credentials_are_valid() {
-    let client = AlpacaTradingClient::new("test-key", "test-secret").unwrap();
+    let client =
+        AlpacaTradingClient::new("test-key", "test-secret", TradingClientConfig::default())
+            .unwrap();
 
     assert_eq!(client.transport.base_url().as_str(), PAPER_URL);
 }
 
 #[test]
 fn new_rejects_credentials_when_secret_contains_newline() {
-    let result = AlpacaTradingClient::new("test-key", "secret\nvalue");
+    let result =
+        AlpacaTradingClient::new("test-key", "secret\nvalue", TradingClientConfig::default());
 
     assert!(matches!(result, Err(ClientError::InvalidCredentials)));
 }
 
 #[test]
 fn new_rejects_credentials_when_key_is_blank() {
-    let result = AlpacaTradingClient::new(" ", "test-secret");
+    let result = AlpacaTradingClient::new(" ", "test-secret", TradingClientConfig::default());
 
     assert!(matches!(result, Err(ClientError::InvalidCredentials)));
 }
@@ -327,7 +334,9 @@ fn get_account_reports_invalid_response_when_json_is_malformed() {
 
 #[test]
 fn get_order_rejects_identifier_when_path_is_dot_segment() {
-    let client = AlpacaTradingClient::new("test-key", "test-secret").unwrap();
+    let client =
+        AlpacaTradingClient::new("test-key", "test-secret", TradingClientConfig::default())
+            .unwrap();
 
     let error = client.get_order("..", false).unwrap_err();
 
@@ -374,4 +383,25 @@ fn create_order_does_not_retry_when_status_is_503() {
 
     assert_eq!(error, ClientError::HttpStatus { status: 503 });
     assert_eq!(request.method, "POST");
+}
+
+#[test]
+fn get_account_sends_user_agent_when_config_names_one() {
+    let (base_url, server) = test_server::serve(vec![Reply::Response {
+        status: "200 OK",
+        headers: "",
+        body: json!({"id": "account-1", "status": "ACTIVE"}).to_string(),
+    }]);
+    let config = TradingClientConfig {
+        transport: TransportConfig {
+            user_agent: "gobelin-test/1.0".into(),
+            ..Default::default()
+        },
+    };
+    let client = AlpacaTradingClient::build("test-key", "test-secret", base_url, config).unwrap();
+
+    client.get_account().unwrap();
+    let request = server.request();
+
+    assert_eq!(request.headers["user-agent"], "gobelin-test/1.0");
 }

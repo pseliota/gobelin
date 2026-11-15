@@ -5,13 +5,14 @@ mod series;
 use reqwest::{Url, header::HeaderMap};
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::transport::{ClientError, RetryPolicy, RetryingTransport, Transport};
+use crate::transport::{ClientError, RetryPolicy, RetryingTransport, Transport, TransportConfig};
 
 const FRED_URL: &str = "https://api.stlouisfed.org/";
 
 #[derive(Debug, Clone, Default)]
 pub struct FredConfig {
     pub retry: RetryPolicy,
+    pub transport: TransportConfig,
 }
 
 pub struct FredClient {
@@ -29,7 +30,7 @@ impl FredClient {
         if api_key.trim().is_empty() {
             return Err(ClientError::InvalidCredentials);
         }
-        let transport = Transport::new(base_url, HeaderMap::new())?;
+        let transport = Transport::new(base_url, HeaderMap::new(), &config.transport)?;
         Ok(Self {
             transport: RetryingTransport::new(transport, config.retry, None),
             api_key: api_key.to_owned(),

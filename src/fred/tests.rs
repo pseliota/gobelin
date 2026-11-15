@@ -25,6 +25,7 @@ fn retries(max_attempts: u32) -> FredConfig {
             base_delay: Duration::ZERO,
             max_delay: Duration::ZERO,
         },
+        transport: TransportConfig::default(),
     }
 }
 
@@ -199,6 +200,7 @@ fn get_series_does_not_retry_when_status_is_400() {
 fn get_series_sends_one_request_when_policy_is_none() {
     let config = FredConfig {
         retry: RetryPolicy::none(),
+        ..Default::default()
     };
     let (client, server) = server(config, vec![reply("500 Internal Server Error", "{}")]);
 

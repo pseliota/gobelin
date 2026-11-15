@@ -1,3 +1,4 @@
+mod config;
 mod error;
 mod retry;
 #[cfg(test)]
@@ -16,6 +17,7 @@ use reqwest::{
 };
 use serde::{Serialize, de::DeserializeOwned};
 
+pub use self::config::TransportConfig;
 pub use self::error::ClientError;
 use self::retry::Failure;
 pub use self::retry::RetryPolicy;
@@ -28,10 +30,16 @@ pub(crate) struct Transport {
 }
 
 impl Transport {
-    pub(crate) fn new(base_url: Url, default_headers: HeaderMap) -> Result<Self, ClientError> {
+    pub(crate) fn new(
+        base_url: Url,
+        default_headers: HeaderMap,
+        config: &TransportConfig,
+    ) -> Result<Self, ClientError> {
         let mut builder = Client::builder()
             .default_headers(default_headers)
-            .timeout(Duration::from_secs(20))
+            .timeout(config.timeout)
+            .connect_timeout(config.connect_timeout)
+            .user_agent(config.user_agent.as_str())
             .redirect(Policy::none())
             .retry(reqwest::retry::never());
         if base_url.scheme() == "http" {

@@ -4,4 +4,4 @@ pub mod fred;
 
 mod transport;
 
-pub use transport::{ClientError, RetryPolicy};
+pub use transport::{ClientError, RetryPolicy, TransportConfig};

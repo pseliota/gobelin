@@ -8,21 +8,36 @@ use self::models::{
     ListAssetsRequest, ListOrdersRequest, Order, Position, ReplaceOrderRequest,
 };
 use super::credential_headers;
-use crate::transport::{self, ClientError, Transport};
+use crate::transport::{self, ClientError, Transport, TransportConfig};
 
 const PAPER_URL: &str = "https://paper-api.alpaca.markets/v2/";
+
+#[derive(Debug, Clone, Default)]
+pub struct TradingClientConfig {
+    pub transport: TransportConfig,
+}
 
 pub struct AlpacaTradingClient {
     transport: Transport,
 }
 
 impl AlpacaTradingClient {
-    pub fn new(key: &str, secret: &str) -> Result<Self, ClientError> {
-        Self::build(key, secret, Url::parse(PAPER_URL).expect("valid paper URL"))
+    pub fn new(key: &str, secret: &str, config: TradingClientConfig) -> Result<Self, ClientError> {
+        let base_url = Url::parse(PAPER_URL).expect("valid paper URL");
+        Self::build(key, secret, base_url, config)
     }
 
-    fn build(key: &str, secret: &str, base_url: Url) -> Result<Self, ClientError> {
-        let transport = Transport::new(base_url, credential_headers(key, secret)?)?;
+    fn build(
+        key: &str,
+        secret: &str,
+        base_url: Url,
+        config: TradingClientConfig,
+    ) -> Result<Self, ClientError> {
+        let transport = Transport::new(
+            base_url,
+            credential_headers(key, secret)?,
+            &config.transport,
+        )?;
         Ok(Self { transport })
     }
 

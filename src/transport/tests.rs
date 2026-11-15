@@ -15,8 +15,7 @@ fn retrying(
     rate_limit: Option<RateLimitHint>,
     script: Vec<Reply>,
 ) -> (RetryingTransport, Recording) {
-    let (base_url, recording) = test_server::serve(script);
-    let transport = Transport::new(base_url, HeaderMap::new()).unwrap();
+    let (transport, recording) = transport(TransportConfig::default(), script);
     let policy = RetryPolicy {
         max_attempts,
         base_delay: Duration::ZERO,
@@ -28,8 +27,57 @@ fn retrying(
     )
 }
 
+fn transport(config: TransportConfig, script: Vec<Reply>) -> (Transport, Recording) {
+    let (base_url, recording) = test_server::serve(script);
+    let transport = Transport::new(base_url, HeaderMap::new(), &config).unwrap();
+    (transport, recording)
+}
+
 fn one_minute(_: &HeaderMap, _: SystemTime) -> Option<Duration> {
     Some(Duration::from_secs(60))
+}
+
+#[test]
+fn new_reports_initialization_when_user_agent_has_newline() {
+    let base_url = Url::parse("http://127.0.0.1:9/").unwrap();
+    let config = TransportConfig {
+        user_agent: "gobelin\nagent".into(),
+        ..Default::default()
+    };
+
+    let error = Transport::new(base_url, HeaderMap::new(), &config).err();
+
+    assert_eq!(error, Some(ClientError::Initialization));
+}
+
+#[test]
+fn send_identifies_crate_when_user_agent_is_default() {
+    let (transport, server) = transport(TransportConfig::default(), vec![reply("200 OK", "")]);
+    let request = transport.request(Method::GET, &["account"]).unwrap();
+
+    transport.send(request, StatusCode::OK).unwrap();
+    let request = server.request();
+
+    assert_eq!(
+        request.headers["user-agent"],
+        format!("gobelin/{}", env!("CARGO_PKG_VERSION"))
+    );
+}
+
+#[test]
+fn send_reports_timeout_when_server_outlasts_configured_timeout() {
+    let config = TransportConfig {
+        timeout: Duration::from_millis(200),
+        ..Default::default()
+    };
+    let (transport, server) = transport(config, vec![Reply::Stall]);
+    let request = transport.request(Method::GET, &["account"]).unwrap();
+
+    let error = transport.send(request, StatusCode::OK).unwrap_err();
+    drop(transport);
+    server.request();
+
+    assert_eq!(error, ClientError::Transport { timed_out: true });
 }
 
 #[test]

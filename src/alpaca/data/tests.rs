@@ -25,6 +25,7 @@ fn retries(max_attempts: u32) -> DataClientConfig {
             base_delay: Duration::ZERO,
             max_delay: Duration::ZERO,
         },
+        transport: TransportConfig::default(),
     }
 }
 
@@ -614,8 +615,8 @@ fn get_latest_stock_bars_returns_transport_error_when_retries_are_exhausted() {
 #[test]
 fn get_latest_stock_bars_sends_one_request_when_policy_is_none() {
     let config = DataClientConfig {
-        feed: None,
         retry: RetryPolicy::none(),
+        ..Default::default()
     };
     let (client, server) = server(config, vec![reply("503 Service Unavailable", json!({}))]);
 

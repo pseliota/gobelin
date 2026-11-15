@@ -1,6 +1,9 @@
 use std::process::ExitCode;
 
-use gobelin::{alpaca::trading::AlpacaTradingClient, config::Credentials};
+use gobelin::{
+    alpaca::trading::{AlpacaTradingClient, TradingClientConfig},
+    config::Credentials,
+};
 
 fn run() -> Result<(), String> {
     let credentials = Credentials::load().map_err(|error| error.to_string())?;
@@ -11,7 +14,8 @@ fn run() -> Result<(), String> {
         .alpaca_secret()
         .map_err(|error| error.to_string())?;
 
-    let client = AlpacaTradingClient::new(&key, &secret).map_err(|error| error.to_string())?;
+    let client = AlpacaTradingClient::new(&key, &secret, TradingClientConfig::default())
+        .map_err(|error| error.to_string())?;
     let account = client.get_account().map_err(|error| error.to_string())?;
 
     println!("Alpaca paper account (read-only request)");

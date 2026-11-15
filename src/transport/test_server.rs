@@ -15,6 +15,7 @@ pub(crate) enum Reply {
         body: String,
     },
     Close,
+    Stall,
 }
 
 pub(crate) struct RecordedRequest {
@@ -104,17 +105,20 @@ fn exchange(listener: &TcpListener, reply: Reply) -> RecordedRequest {
         assert!(count > 0, "incomplete body");
         bytes.extend_from_slice(&buffer[..count]);
     }
-    if let Reply::Response {
-        status,
-        headers,
-        body,
-    } = reply
-    {
-        let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{headers}\r\n{body}",
-            body.len()
-        );
-        stream.write_all(response.as_bytes()).unwrap();
+    match reply {
+        Reply::Response {
+            status,
+            headers,
+            body,
+        } => {
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{headers}\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        }
+        Reply::Close => {}
+        Reply::Stall => while stream.read(&mut [0; 64]).is_ok_and(|count| count > 0) {},
     }
     RecordedRequest {
         method,
