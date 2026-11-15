@@ -9,8 +9,7 @@
 
 ### Documentation
 
-- Prefer comments and docstrings that are plain and declarative.
-- Prefer avoiding unnecessary documentation.
+- No comments or docstrings.
 
 ### Design
 
