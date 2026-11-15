@@ -29,6 +29,13 @@ jobs:
       - run: cargo clippy --all-targets --locked
       - run: cargo test --locked
 
+  comments:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: npm install --global @ast-grep/cli@0.51.2
+      - run: ast-grep scan
+
   audit:
     runs-on: ubuntu-latest
     permissions:

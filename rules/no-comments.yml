@@ -1,0 +1,9 @@
+id: no-comments
+language: rust
+severity: error
+message: Comments and docstrings are not allowed.
+note: Express intent through names, types and tests. See AGENTS.md.
+rule:
+  any:
+    - kind: line_comment
+    - kind: block_comment
