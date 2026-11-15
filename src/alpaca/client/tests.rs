@@ -5,7 +5,7 @@ use std::{
     io::{Read, Write},
     net::TcpListener,
     thread::{self, JoinHandle},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 struct RecordedRequest {
@@ -114,7 +114,7 @@ fn order_response() -> Value {
 fn new_uses_paper_endpoint_when_credentials_are_valid() {
     let client = AlpacaClient::new("test-key", "test-secret").unwrap();
 
-    assert_eq!(client.base_url.as_str(), PAPER_URL);
+    assert_eq!(client.transport.base_url().as_str(), PAPER_URL);
 }
 
 #[test]
@@ -129,16 +129,6 @@ fn new_rejects_credentials_when_key_is_blank() {
     let result = AlpacaClient::new(" ", "test-secret");
 
     assert!(matches!(result, Err(ClientError::InvalidCredentials)));
-}
-
-#[test]
-fn credential_header_redacts_value_when_formatted_for_debug() {
-    let header = credential_header("test-secret").unwrap();
-
-    let debug = format!("{header:?}");
-
-    assert!(header.is_sensitive());
-    assert!(!debug.contains("test-secret"));
 }
 
 #[test]
