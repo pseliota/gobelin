@@ -1,22 +1,14 @@
 //! Blocking HTTP access to Alpaca's paper Trading API.
 
-use std::time::Duration;
-
-use reqwest::{
-    Method, StatusCode, Url,
-    blocking::{Client, RequestBuilder, Response},
-    header::{HeaderMap, HeaderValue},
-    redirect::Policy,
-};
+use reqwest::{Method, StatusCode, Url, blocking::RequestBuilder};
 use serde::de::DeserializeOwned;
 
+pub use super::error::ClientError;
 use super::models::{
     Account, Asset, CalendarDay, CalendarRequest, CancelOrderResult, Clock, CreateOrderRequest,
     ListAssetsRequest, ListOrdersRequest, Order, Position, ReplaceOrderRequest,
 };
-
-mod error;
-pub use error::ClientError;
+use super::transport::{self, Transport};
 
 const PAPER_URL: &str = "https://paper-api.alpaca.markets/v2/";
 
@@ -24,8 +16,7 @@ const PAPER_URL: &str = "https://paper-api.alpaca.markets/v2/";
 /// Redirects and retries are disabled. Credentials and response bodies are not logged.
 /// Request models are serialized as supplied; Alpaca validates trading constraints.
 pub struct AlpacaClient {
-    http: Client,
-    base_url: Url,
+    transport: Transport,
 }
 
 impl AlpacaClient {
@@ -34,20 +25,8 @@ impl AlpacaClient {
     }
 
     fn build(key: &str, secret: &str, base_url: Url) -> Result<Self, ClientError> {
-        let mut headers = HeaderMap::new();
-        headers.insert("APCA-API-KEY-ID", credential_header(key)?);
-        headers.insert("APCA-API-SECRET-KEY", credential_header(secret)?);
-        let mut builder = Client::builder()
-            .default_headers(headers)
-            .timeout(Duration::from_secs(20))
-            .redirect(Policy::none())
-            .retry(reqwest::retry::never());
-        // Local HTTP tests must not use system proxy settings.
-        if base_url.scheme() == "http" {
-            builder = builder.no_proxy();
-        }
-        let http = builder.build().map_err(|_| ClientError::Initialization)?;
-        Ok(Self { http, base_url })
+        let transport = Transport::new(key, secret, base_url)?;
+        Ok(Self { transport })
     }
 
     pub fn get_account(&self) -> Result<Account, ClientError> {
@@ -109,7 +88,7 @@ impl AlpacaClient {
 
     /// Requests cancellation. HTTP 204 acknowledges the request, not final order state.
     pub fn cancel_order(&self, order_id: &str) -> Result<(), ClientError> {
-        self.send(
+        self.transport.send(
             self.request(Method::DELETE, &["orders", order_id])?,
             StatusCode::NO_CONTENT,
         )?;
@@ -118,11 +97,11 @@ impl AlpacaClient {
 
     /// Each result must be checked individually; HTTP 207 is not universal success.
     pub fn cancel_all_orders(&self) -> Result<Vec<CancelOrderResult>, ClientError> {
-        let response = self.send(
+        let response = self.transport.send(
             self.request(Method::DELETE, &["orders"])?,
             StatusCode::MULTI_STATUS,
         )?;
-        decode(response)
+        transport::decode(response)
     }
 
     pub fn get_clock(&self) -> Result<Clock, ClientError> {
@@ -134,62 +113,12 @@ impl AlpacaClient {
     }
 
     fn request(&self, method: Method, segments: &[&str]) -> Result<RequestBuilder, ClientError> {
-        if segments
-            .iter()
-            .any(|s| s.is_empty() || *s == "." || *s == "..")
-        {
-            return Err(ClientError::InvalidPath);
-        }
-        let mut url = self.base_url.clone();
-        url.path_segments_mut()
-            .map_err(|_| ClientError::InvalidPath)?
-            .pop_if_empty()
-            .extend(segments);
-        Ok(self.http.request(method, url))
+        self.transport.request(method, segments)
     }
 
     fn json<T: DeserializeOwned>(&self, request: RequestBuilder) -> Result<T, ClientError> {
-        decode(self.send(request, StatusCode::OK)?)
+        self.transport.json(request)
     }
-
-    fn send(&self, request: RequestBuilder, expected: StatusCode) -> Result<Response, ClientError> {
-        let response = request.send().map_err(|error| {
-            if error.is_builder() {
-                ClientError::InvalidRequest
-            } else {
-                ClientError::Transport {
-                    timed_out: error.is_timeout(),
-                }
-            }
-        })?;
-        if response.status() != expected {
-            return Err(ClientError::HttpStatus {
-                status: response.status().as_u16(),
-            });
-        }
-        Ok(response)
-    }
-}
-
-fn credential_header(value: &str) -> Result<HeaderValue, ClientError> {
-    if value.trim().is_empty() {
-        return Err(ClientError::InvalidCredentials);
-    }
-    let mut header = HeaderValue::from_str(value).map_err(|_| ClientError::InvalidCredentials)?;
-    header.set_sensitive(true);
-    Ok(header)
-}
-
-fn decode<T: DeserializeOwned>(response: Response) -> Result<T, ClientError> {
-    response.json().map_err(|error| {
-        if error.is_timeout() || error.is_body() {
-            ClientError::Transport {
-                timed_out: error.is_timeout(),
-            }
-        } else {
-            ClientError::InvalidResponse
-        }
-    })
 }
 
 #[cfg(test)]

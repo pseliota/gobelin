@@ -2,6 +2,7 @@ use std::{error::Error, fmt};
 
 /// Sanitized failures; response bodies and credential values are never included.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ClientError {
     InvalidCredentials,
     Initialization,
