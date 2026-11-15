@@ -76,7 +76,18 @@ impl Transport {
         request: RequestBuilder,
         expected: StatusCode,
     ) -> Result<Response, ClientError> {
-        let response = request.send().map_err(|error| {
+        let response = self.execute(request)?;
+        if response.status() != expected {
+            return Err(ClientError::HttpStatus {
+                status: response.status().as_u16(),
+            });
+        }
+        Ok(response)
+    }
+
+    /// Sends the request and returns the response whatever its status.
+    pub(super) fn execute(&self, request: RequestBuilder) -> Result<Response, ClientError> {
+        request.send().map_err(|error| {
             if error.is_builder() {
                 ClientError::InvalidRequest
             } else {
@@ -84,13 +95,7 @@ impl Transport {
                     timed_out: error.is_timeout(),
                 }
             }
-        })?;
-        if response.status() != expected {
-            return Err(ClientError::HttpStatus {
-                status: response.status().as_u16(),
-            });
-        }
-        Ok(response)
+        })
     }
 }
 
