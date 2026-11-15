@@ -1,9 +1,9 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
-/// Retry behaviour for transport errors, HTTP 429 and HTTP 5xx.
+/// Retry behaviour for GET requests that fail with a transport error, HTTP 429 or HTTP 5xx.
 ///
 /// The delay doubles from `base_delay` after each attempt and is capped at `max_delay`.
-/// A 429 that carries a rate-limit reset time waits until that time instead,
+/// A 429 whose provider reports a rate-limit reset time waits until that time instead,
 /// and is not retried when the wait would exceed `max_delay`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryPolicy {
@@ -68,17 +68,6 @@ pub(super) enum Failure {
         /// Time until the rate limit resets, when the response said so.
         reset_after: Option<Duration>,
     },
-}
-
-/// Parses an `X-RateLimit-Reset` value (UNIX epoch seconds) into the time remaining at `now`.
-/// Returns `None` when the value is malformed or not in the future.
-pub(super) fn reset_after(header: &str, now: SystemTime) -> Option<Duration> {
-    let seconds = header.trim().parse().ok()?;
-    UNIX_EPOCH
-        .checked_add(Duration::from_secs(seconds))?
-        .duration_since(now)
-        .ok()
-        .filter(|wait| !wait.is_zero())
 }
 
 #[cfg(test)]
@@ -225,38 +214,5 @@ mod tests {
 
             assert_eq!(delay, expected, "{failure:?} after {attempts}");
         }
-    }
-
-    #[test]
-    fn reset_after_returns_remaining_time_when_header_is_a_future_epoch() {
-        let now = UNIX_EPOCH + Duration::from_millis(1_000_500);
-        let cases = [
-            ("1001", Some(Duration::from_millis(500))),
-            ("1060", Some(Duration::from_millis(59_500))),
-            (" 1060 ", Some(Duration::from_millis(59_500))),
-            ("1000", None),
-            ("0", None),
-            ("", None),
-            ("soon", None),
-            ("-5", None),
-            ("1060.5", None),
-            ("18446744073709551615", None),
-            ("18446744073709551616", None),
-        ];
-
-        for (header, expected) in cases {
-            let wait = reset_after(header, now);
-
-            assert_eq!(wait, expected, "{header:?}");
-        }
-    }
-
-    #[test]
-    fn reset_after_returns_none_when_reset_equals_now() {
-        let now = UNIX_EPOCH + secs(1_000);
-
-        let wait = reset_after("1000", now);
-
-        assert_eq!(wait, None);
     }
 }

@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, mem};
 
-use crate::alpaca::ClientError;
+use crate::transport::ClientError;
 
 /// A response that may point to a following page.
 pub(super) trait Page {

@@ -1,54 +1,15 @@
-use std::{collections::HashMap, process::ExitCode};
+use std::process::ExitCode;
 
-use gobelin::alpaca::trading::AlpacaTradingClient;
-
-fn credential(names: &[&str], file_values: &HashMap<String, String>) -> Result<String, String> {
-    let value = names
-        .iter()
-        .find_map(|name| std::env::var(name).ok().filter(|v| !v.trim().is_empty()))
-        .or_else(|| {
-            names.iter().find_map(|name| {
-                file_values
-                    .get(*name)
-                    .filter(|v| !v.trim().is_empty())
-                    .cloned()
-            })
-        })
-        .ok_or_else(|| {
-            format!(
-                "Missing credential: set {} in .env or the environment",
-                names[0]
-            )
-        })?;
-
-    Ok(value)
-}
+use gobelin::{alpaca::trading::AlpacaTradingClient, config::Credentials};
 
 fn run() -> Result<(), String> {
-    // Parse locally rather than changing the process environment or logging secrets.
-    let file_values: HashMap<String, String> = match dotenvy::from_path_iter(".env") {
-        Ok(entries) => entries
-            .collect::<Result<_, _>>()
-            .map_err(|_| "Could not parse .env; check its KEY=value syntax".to_owned())?,
-        Err(dotenvy::Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
-            HashMap::new()
-        }
-        Err(_) => return Err("Could not read .env".to_owned()),
-    };
-
-    let key = credential(
-        &["ALPACA_KEY", "ALPACA_API_KEY", "APCA_API_KEY_ID"],
-        &file_values,
-    )?;
-    let secret = credential(
-        &[
-            "ALPACA_SECRET",
-            "ALPACA_SECRET_KEY",
-            "ALPACA_API_SECRET",
-            "APCA_API_SECRET_KEY",
-        ],
-        &file_values,
-    )?;
+    let credentials = Credentials::load().map_err(|error| error.to_string())?;
+    let key = credentials
+        .alpaca_key()
+        .map_err(|error| error.to_string())?;
+    let secret = credentials
+        .alpaca_secret()
+        .map_err(|error| error.to_string())?;
 
     let client = AlpacaTradingClient::new(&key, &secret).map_err(|error| error.to_string())?;
     let account = client.get_account().map_err(|error| error.to_string())?;

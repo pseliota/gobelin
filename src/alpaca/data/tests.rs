@@ -1,51 +1,9 @@
 use super::models::SortDirection;
 use super::models::{Adjustment, BarsRequest};
 use super::*;
+use crate::transport::test_server::{self, Recording, Reply};
 use serde_json::{Value, json};
-use std::{
-    collections::HashMap,
-    io::{Read, Write},
-    net::{TcpListener, TcpStream},
-    thread::JoinHandle,
-    time::{Duration, Instant},
-};
-
-struct RecordedRequest {
-    method: String,
-    target: String,
-    headers: HashMap<String, String>,
-}
-
-impl RecordedRequest {
-    fn path(&self) -> &str {
-        self.target.split('?').next().unwrap()
-    }
-
-    fn query(&self) -> Vec<(String, String)> {
-        Url::parse(&format!("http://localhost{}", self.target))
-            .unwrap()
-            .query_pairs()
-            .into_owned()
-            .collect()
-    }
-
-    fn param(&self, name: &str) -> Option<String> {
-        self.query()
-            .into_iter()
-            .find_map(|(key, value)| (key == name).then_some(value))
-    }
-}
-
-/// A scripted answer to one request.
-enum Reply {
-    Response {
-        status: &'static str,
-        body: String,
-        headers: &'static str,
-    },
-    /// Closes the connection without answering.
-    Close,
-}
+use std::time::Duration;
 
 fn reply(status: &'static str, body: Value) -> Reply {
     reply_with_headers(status, body, "")
@@ -54,8 +12,8 @@ fn reply(status: &'static str, body: Value) -> Reply {
 fn reply_with_headers(status: &'static str, body: Value, headers: &'static str) -> Reply {
     Reply::Response {
         status,
-        body: body.to_string(),
         headers,
+        body: body.to_string(),
     }
 }
 
@@ -77,87 +35,10 @@ fn feed(feed: Feed) -> DataClientConfig {
     }
 }
 
-// Bounded loopback exchanges, one connection per scripted reply;
-// no credentials, proxies, or external services.
-fn server(
-    config: DataClientConfig,
-    script: Vec<Reply>,
-) -> (AlpacaDataClient, JoinHandle<Vec<RecordedRequest>>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
-    let address = listener.local_addr().unwrap();
-    let handle = thread::spawn(move || {
-        script
-            .into_iter()
-            .map(|reply| exchange(&listener, reply))
-            .collect()
-    });
-    let base_url = Url::parse(&format!("http://{address}/")).unwrap();
+fn server(config: DataClientConfig, script: Vec<Reply>) -> (AlpacaDataClient, Recording) {
+    let (base_url, recording) = test_server::serve(script);
     let client = AlpacaDataClient::build("test-key", "test-secret", base_url, config).unwrap();
-    (client, handle)
-}
-
-fn exchange(listener: &TcpListener, reply: Reply) -> RecordedRequest {
-    let mut stream = accept(listener);
-    let mut bytes = Vec::new();
-    let header_end = loop {
-        let mut buffer = [0; 4096];
-        let count = stream.read(&mut buffer).unwrap();
-        assert!(count > 0, "incomplete headers");
-        bytes.extend_from_slice(&buffer[..count]);
-        if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
-            break end + 4;
-        }
-        assert!(bytes.len() < 65536, "oversized headers");
-    };
-    let header_text = String::from_utf8(bytes[..header_end].to_vec()).unwrap();
-    let mut lines = header_text.split("\r\n");
-    let mut request_line = lines.next().unwrap().split_whitespace();
-    let method = request_line.next().unwrap().to_owned();
-    let target = request_line.next().unwrap().to_owned();
-    let headers = lines
-        .filter_map(|line| line.split_once(':'))
-        .map(|(key, value)| (key.to_ascii_lowercase(), value.trim().to_owned()))
-        .collect();
-    if let Reply::Response {
-        status,
-        body,
-        headers,
-    } = reply
-    {
-        let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{headers}\r\n{body}",
-            body.len()
-        );
-        stream.write_all(response.as_bytes()).unwrap();
-    }
-    RecordedRequest {
-        method,
-        target,
-        headers,
-    }
-}
-
-fn accept(listener: &TcpListener) -> TcpStream {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let stream = loop {
-        match listener.accept() {
-            Ok((stream, _)) => break stream,
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                assert!(Instant::now() < deadline, "client never connected");
-                thread::sleep(Duration::from_millis(5));
-            }
-            Err(error) => panic!("accept failed: {error}"),
-        }
-    };
-    stream.set_nonblocking(false).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
-    stream
-        .set_write_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
-    stream
+    (client, recording)
 }
 
 fn bars_request(symbols: &[&str]) -> BarsRequest {
@@ -223,7 +104,7 @@ fn get_stock_bars_authenticates_request_when_fetching_page() {
     let page = client
         .get_stock_bars(&bars_request(&["AAPL"]), None)
         .unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests[0].method, "GET");
     assert_eq!(requests[0].path(), "/v2/stocks/bars");
@@ -249,7 +130,7 @@ fn get_stock_bars_encodes_request_fields_when_request_is_populated() {
     };
 
     client.get_stock_bars(&request, None).unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     let expected = [
         ("symbols", "AAPL,BRK.B"),
@@ -274,7 +155,7 @@ fn get_stock_bars_sends_page_token_when_token_is_supplied() {
     client
         .get_stock_bars(&bars_request(&["AAPL"]), Some("token&1"))
         .unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests[0].param("page_token").as_deref(), Some("token&1"));
     assert!(requests[0].target.contains("page_token=token%261"));
@@ -287,7 +168,7 @@ fn get_stock_bars_omits_page_token_when_token_is_not_supplied() {
     client
         .get_stock_bars(&bars_request(&["AAPL"]), None)
         .unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests[0].param("page_token"), None);
 }
@@ -302,7 +183,7 @@ fn get_stock_bars_sends_feed_when_feed_is_configured() {
     client
         .get_stock_bars(&bars_request(&["AAPL"]), None)
         .unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests[0].param("feed").as_deref(), Some("delayed_sip"));
 }
@@ -314,7 +195,7 @@ fn get_stock_bars_omits_feed_when_feed_is_not_configured() {
     client
         .get_stock_bars(&bars_request(&["AAPL"]), None)
         .unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests[0].param("feed"), None);
 }
@@ -332,7 +213,7 @@ fn get_stock_bars_returns_empty_page_when_bars_are_null() {
     let page = client
         .get_stock_bars(&bars_request(&["AAPL"]), None)
         .unwrap();
-    server.join().unwrap();
+    server.requests();
 
     assert!(page.bars.is_empty());
 }
@@ -342,7 +223,7 @@ fn get_stock_bars_rejects_request_when_symbols_are_empty() {
     let (client, server) = server(retries(3), vec![]);
 
     let result = client.get_stock_bars(&bars_request(&[]), None);
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(result.unwrap_err(), ClientError::InvalidRequest);
     assert!(requests.is_empty());
@@ -353,7 +234,7 @@ fn get_stock_bars_rejects_request_when_symbol_is_blank() {
     let (client, server) = server(retries(3), vec![]);
 
     let result = client.get_stock_bars(&bars_request(&["AAPL", " "]), None);
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(result.unwrap_err(), ClientError::InvalidRequest);
     assert!(requests.is_empty());
@@ -372,7 +253,7 @@ fn stock_bars_pages_follows_tokens_when_more_pages_exist() {
     let request = bars_request(&["AAPL"]);
 
     let pages: Vec<_> = client.stock_bars_pages(&request).collect();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     let closes: Vec<f64> = pages
         .iter()
@@ -403,7 +284,7 @@ fn stock_bars_pages_stops_when_page_fails() {
     let request = bars_request(&["AAPL"]);
 
     let pages: Vec<_> = client.stock_bars_pages(&request).collect();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(pages.len(), 2);
     assert!(pages[0].is_ok());
@@ -417,7 +298,7 @@ fn stock_bars_pages_yields_error_when_symbols_are_empty() {
     let request = bars_request(&[]);
 
     let pages: Vec<_> = client.stock_bars_pages(&request).collect();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(pages, [Err(ClientError::InvalidRequest)]);
     assert!(requests.is_empty());
@@ -434,7 +315,7 @@ fn get_latest_stock_bars_joins_symbols_when_several_are_requested() {
     );
 
     let bars = client.get_latest_stock_bars(&["AAPL", "TSLA"]).unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests[0].method, "GET");
     assert_eq!(requests[0].path(), "/v2/stocks/bars/latest");
@@ -456,7 +337,7 @@ fn get_latest_stock_bars_omits_feed_when_feed_is_not_configured() {
     let (client, server) = server(retries(1), vec![reply("200 OK", latest_bars())]);
 
     client.get_latest_stock_bars(&["AAPL"]).unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests[0].target, "/v2/stocks/bars/latest?symbols=AAPL");
 }
@@ -466,7 +347,7 @@ fn get_latest_stock_bars_rejects_request_when_symbols_are_empty() {
     let (client, server) = server(retries(3), vec![]);
 
     let result = client.get_latest_stock_bars(&[]);
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(result.unwrap_err(), ClientError::InvalidRequest);
     assert!(requests.is_empty());
@@ -480,7 +361,7 @@ fn get_latest_stock_quotes_decodes_quotes_when_feed_is_configured() {
     );
 
     let quotes = client.get_latest_stock_quotes(&["AAPL"]).unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests[0].method, "GET");
     assert_eq!(requests[0].path(), "/v2/stocks/quotes/latest");
@@ -496,7 +377,7 @@ fn get_latest_stock_quotes_rejects_request_when_symbol_is_empty() {
     let (client, server) = server(retries(3), vec![]);
 
     let result = client.get_latest_stock_quotes(&["AAPL", ""]);
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(result.unwrap_err(), ClientError::InvalidRequest);
     assert!(requests.is_empty());
@@ -510,7 +391,7 @@ fn get_latest_stock_trades_decodes_trades_when_feed_is_configured() {
     );
 
     let trades = client.get_latest_stock_trades(&["AAPL"]).unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests[0].method, "GET");
     assert_eq!(requests[0].path(), "/v2/stocks/trades/latest");
@@ -526,7 +407,7 @@ fn get_latest_stock_trades_rejects_request_when_symbols_are_empty() {
     let (client, server) = server(retries(3), vec![]);
 
     let result = client.get_latest_stock_trades(&[]);
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(result.unwrap_err(), ClientError::InvalidRequest);
     assert!(requests.is_empty());
@@ -549,7 +430,7 @@ fn get_stock_snapshots_decodes_bare_object_when_keyed_by_symbol() {
     );
 
     let snapshots = client.get_stock_snapshots(&["AAPL", "TSLA"]).unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests[0].method, "GET");
     assert_eq!(requests[0].path(), "/v2/stocks/snapshots");
@@ -572,7 +453,7 @@ fn get_stock_snapshots_rejects_request_when_symbol_is_blank() {
     let (client, server) = server(retries(3), vec![]);
 
     let result = client.get_stock_snapshots(&["\t"]);
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(result.unwrap_err(), ClientError::InvalidRequest);
     assert!(requests.is_empty());
@@ -589,7 +470,7 @@ fn get_latest_stock_bars_retries_when_status_is_429() {
     );
 
     let bars = client.get_latest_stock_bars(&["AAPL"]).unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].target, requests[1].target);
@@ -609,7 +490,7 @@ fn get_latest_stock_bars_retries_when_status_is_503() {
     );
 
     let bars = client.get_latest_stock_bars(&["AAPL"]).unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests.len(), 3);
     assert_eq!(bars["AAPL"].close, 172.79);
@@ -623,7 +504,7 @@ fn get_latest_stock_bars_retries_when_connection_closes_without_response() {
     );
 
     let bars = client.get_latest_stock_bars(&["AAPL"]).unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests.len(), 2);
     assert_eq!(bars["AAPL"].close, 172.79);
@@ -644,7 +525,7 @@ fn get_latest_stock_bars_retries_when_rate_limit_reset_has_passed() {
     );
 
     let bars = client.get_latest_stock_bars(&["AAPL"]).unwrap();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(requests.len(), 2);
     assert_eq!(bars["AAPL"].close, 172.79);
@@ -662,7 +543,7 @@ fn get_latest_stock_bars_gives_up_when_rate_limit_reset_exceeds_max_delay() {
     );
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(error, ClientError::HttpStatus { status: 429 });
     assert_eq!(requests.len(), 1);
@@ -673,7 +554,7 @@ fn get_latest_stock_bars_does_not_retry_when_status_is_400() {
     let (client, server) = server(retries(3), vec![reply("400 Bad Request", json!({}))]);
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(error, ClientError::HttpStatus { status: 400 });
     assert_eq!(requests.len(), 1);
@@ -684,7 +565,7 @@ fn get_latest_stock_bars_does_not_retry_when_status_is_403() {
     let (client, server) = server(retries(3), vec![reply("403 Forbidden", json!({}))]);
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(error, ClientError::HttpStatus { status: 403 });
     assert_eq!(requests.len(), 1);
@@ -695,7 +576,7 @@ fn get_latest_stock_bars_does_not_retry_when_json_is_malformed() {
     let (client, server) = server(retries(3), vec![reply("200 OK", json!({"bars": 1}))]);
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(error, ClientError::InvalidResponse);
     assert_eq!(requests.len(), 1);
@@ -713,7 +594,7 @@ fn get_latest_stock_bars_returns_last_status_when_retries_are_exhausted() {
     );
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(error, ClientError::HttpStatus { status: 500 });
     assert_eq!(requests.len(), 3);
@@ -724,7 +605,7 @@ fn get_latest_stock_bars_returns_transport_error_when_retries_are_exhausted() {
     let (client, server) = server(retries(2), vec![Reply::Close, Reply::Close]);
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(error, ClientError::Transport { timed_out: false });
     assert_eq!(requests.len(), 2);
@@ -739,7 +620,7 @@ fn get_latest_stock_bars_sends_one_request_when_policy_is_none() {
     let (client, server) = server(config, vec![reply("503 Service Unavailable", json!({}))]);
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(error, ClientError::HttpStatus { status: 503 });
     assert_eq!(requests.len(), 1);
@@ -753,7 +634,7 @@ fn get_latest_stock_bars_sends_one_request_when_max_attempts_is_zero() {
     );
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
-    let requests = server.join().unwrap();
+    let requests = server.requests();
 
     assert_eq!(error, ClientError::HttpStatus { status: 503 });
     assert_eq!(requests.len(), 1);
@@ -776,7 +657,7 @@ fn get_latest_stock_bars_reports_status_without_body_when_retries_are_exhausted(
     );
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
-    server.join().unwrap();
+    server.requests();
 
     assert_eq!(error, ClientError::HttpStatus { status: 500 });
     assert!(!format!("{error:?} {error}").contains("sensitive detail"));
