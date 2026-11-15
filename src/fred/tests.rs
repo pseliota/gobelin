@@ -6,16 +6,14 @@ use super::models::{
     SearchRequest, SearchType, SortOrder, Units,
 };
 use super::*;
-use crate::transport::test_server::{self, Recording, Reply};
+use crate::transport::testing::scripted::{
+    Recording, Reply, executor, interrupted, response, timed_out,
+};
 
 const API_KEY: &str = "fred-secret-0123456789abcdef";
 
-fn reply(status: &'static str, body: &str) -> Reply {
-    Reply::Response {
-        status,
-        headers: "",
-        body: body.to_owned(),
-    }
+fn reply(status: u16, body: &str) -> Reply {
+    response(status, &[], body)
 }
 
 fn retries(max_attempts: u32) -> FredConfig {
@@ -25,12 +23,13 @@ fn retries(max_attempts: u32) -> FredConfig {
             base_delay: Duration::ZERO,
             max_delay: Duration::ZERO,
         },
+        transport: TransportConfig::default(),
     }
 }
 
 fn server(config: FredConfig, script: Vec<Reply>) -> (FredClient, Recording) {
-    let (base_url, recording) = test_server::serve(script);
-    let client = FredClient::build(API_KEY, base_url, config).unwrap();
+    let (executor, recording) = executor(script);
+    let client = FredClient::with_executor(API_KEY, config, executor).unwrap();
     (client, recording)
 }
 
@@ -81,7 +80,7 @@ fn new_rejects_credentials_when_key_is_blank() {
 
 #[test]
 fn get_series_sends_key_and_json_format_when_fetching_series() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", SERIES)]);
+    let (client, server) = server(retries(1), vec![reply(200, SERIES)]);
 
     client.get_series("GNPCA").unwrap();
     let request = server.request();
@@ -100,7 +99,7 @@ fn get_series_sends_key_and_json_format_when_fetching_series() {
 
 #[test]
 fn get_series_sends_no_auth_headers_when_fetching_series() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", SERIES)]);
+    let (client, server) = server(retries(1), vec![reply(200, SERIES)]);
 
     client.get_series("GNPCA").unwrap();
     let request = server.request();
@@ -116,7 +115,7 @@ fn get_series_sends_no_auth_headers_when_fetching_series() {
 
 #[test]
 fn get_series_decodes_first_series_when_response_is_fixture() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", SERIES)]);
+    let (client, server) = server(retries(1), vec![reply(200, SERIES)]);
 
     let series = client.get_series("GNPCA").unwrap();
     server.request();
@@ -130,7 +129,7 @@ fn get_series_decodes_first_series_when_response_is_fixture() {
 #[test]
 fn get_series_returns_invalid_response_when_seriess_is_empty() {
     let body = r#"{"realtime_start":"2013-08-14","realtime_end":"2013-08-14","seriess":[]}"#;
-    let (client, server) = server(retries(3), vec![reply("200 OK", body)]);
+    let (client, server) = server(retries(3), vec![reply(200, body)]);
 
     let error = client.get_series("GNPCA").unwrap_err();
     server.request();
@@ -151,13 +150,7 @@ fn get_series_rejects_request_when_series_id_is_blank() {
 
 #[test]
 fn get_series_retries_when_status_is_429() {
-    let (client, server) = server(
-        retries(3),
-        vec![
-            reply("429 Too Many Requests", "{}"),
-            reply("200 OK", SERIES),
-        ],
-    );
+    let (client, server) = server(retries(3), vec![reply(429, "{}"), reply(200, SERIES)]);
 
     let series = client.get_series("GNPCA").unwrap();
     let requests = server.requests();
@@ -169,13 +162,7 @@ fn get_series_retries_when_status_is_429() {
 
 #[test]
 fn get_series_retries_when_status_is_500() {
-    let (client, server) = server(
-        retries(3),
-        vec![
-            reply("500 Internal Server Error", "{}"),
-            reply("200 OK", SERIES),
-        ],
-    );
+    let (client, server) = server(retries(3), vec![reply(500, "{}"), reply(200, SERIES)]);
 
     let series = client.get_series("GNPCA").unwrap();
     let requests = server.requests();
@@ -186,7 +173,7 @@ fn get_series_retries_when_status_is_500() {
 
 #[test]
 fn get_series_does_not_retry_when_status_is_400() {
-    let (client, server) = server(retries(3), vec![reply("400 Bad Request", "{}")]);
+    let (client, server) = server(retries(3), vec![reply(400, "{}")]);
 
     let error = client.get_series("GNPCA").unwrap_err();
     let requests = server.requests();
@@ -199,8 +186,9 @@ fn get_series_does_not_retry_when_status_is_400() {
 fn get_series_sends_one_request_when_policy_is_none() {
     let config = FredConfig {
         retry: RetryPolicy::none(),
+        ..Default::default()
     };
-    let (client, server) = server(config, vec![reply("500 Internal Server Error", "{}")]);
+    let (client, server) = server(config, vec![reply(500, "{}")]);
 
     let error = client.get_series("GNPCA").unwrap_err();
     let requests = server.requests();
@@ -211,7 +199,7 @@ fn get_series_sends_one_request_when_policy_is_none() {
 
 #[test]
 fn get_series_omits_key_from_error_when_status_is_400() {
-    let (client, server) = server(retries(1), vec![reply("400 Bad Request", "{}")]);
+    let (client, server) = server(retries(1), vec![reply(400, "{}")]);
 
     let error = client.get_series("GNPCA").unwrap_err();
     server.request();
@@ -220,8 +208,8 @@ fn get_series_omits_key_from_error_when_status_is_400() {
 }
 
 #[test]
-fn get_series_omits_key_from_error_when_connection_closes_without_response() {
-    let (client, _server) = server(retries(1), vec![Reply::Close]);
+fn get_series_omits_key_from_error_when_request_is_interrupted() {
+    let (client, _server) = server(retries(1), vec![interrupted()]);
 
     let error = client.get_series("GNPCA").unwrap_err();
 
@@ -230,8 +218,18 @@ fn get_series_omits_key_from_error_when_connection_closes_without_response() {
 }
 
 #[test]
+fn get_series_omits_key_from_error_when_request_times_out() {
+    let (client, _server) = server(retries(1), vec![timed_out()]);
+
+    let error = client.get_series("GNPCA").unwrap_err();
+
+    assert_eq!(error, ClientError::Transport { timed_out: true });
+    assert_key_absent(&error);
+}
+
+#[test]
 fn get_observations_sends_key_and_json_format_when_fetching_observations() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", OBSERVATIONS)]);
+    let (client, server) = server(retries(1), vec![reply(200, OBSERVATIONS)]);
 
     client
         .get_observations(&observations_request("GNPCA"))
@@ -252,7 +250,7 @@ fn get_observations_sends_key_and_json_format_when_fetching_observations() {
 
 #[test]
 fn get_observations_encodes_request_fields_when_request_is_populated() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", OBSERVATIONS)]);
+    let (client, server) = server(retries(1), vec![reply(200, OBSERVATIONS)]);
     let request = ObservationsRequest {
         series_id: "GNPCA".into(),
         observation_start: Some("1990-01-01".into()),
@@ -294,7 +292,7 @@ fn get_observations_encodes_request_fields_when_request_is_populated() {
 
 #[test]
 fn get_observations_decodes_page_when_response_is_fixture() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", OBSERVATIONS)]);
+    let (client, server) = server(retries(1), vec![reply(200, OBSERVATIONS)]);
 
     let page = client
         .get_observations(&observations_request("GNPCA"))
@@ -322,7 +320,7 @@ fn get_observations_rejects_request_when_series_id_is_blank() {
 
 #[test]
 fn search_series_sends_key_and_json_format_when_searching() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", SEARCH)]);
+    let (client, server) = server(retries(1), vec![reply(200, SEARCH)]);
 
     client
         .search_series(&search_request("money stock"))
@@ -343,7 +341,7 @@ fn search_series_sends_key_and_json_format_when_searching() {
 
 #[test]
 fn search_series_encodes_request_fields_when_request_is_populated() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", SEARCH)]);
+    let (client, server) = server(retries(1), vec![reply(200, SEARCH)]);
     let request = SearchRequest {
         search_text: "money & stock".into(),
         search_type: Some(SearchType::SeriesId),
@@ -385,7 +383,7 @@ fn search_series_encodes_request_fields_when_request_is_populated() {
 
 #[test]
 fn search_series_decodes_page_when_response_is_fixture() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", SEARCH)]);
+    let (client, server) = server(retries(1), vec![reply(200, SEARCH)]);
 
     let page = client
         .search_series(&search_request("money stock"))

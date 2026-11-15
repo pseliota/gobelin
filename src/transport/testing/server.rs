@@ -6,7 +6,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use reqwest::Url;
+use url::Url;
+
+use super::RecordedRequest;
 
 pub(crate) enum Reply {
     Response {
@@ -15,33 +17,7 @@ pub(crate) enum Reply {
         body: String,
     },
     Close,
-}
-
-pub(crate) struct RecordedRequest {
-    pub(crate) method: String,
-    pub(crate) target: String,
-    pub(crate) headers: HashMap<String, String>,
-    pub(crate) body: Vec<u8>,
-}
-
-impl RecordedRequest {
-    pub(crate) fn path(&self) -> &str {
-        self.target.split('?').next().unwrap()
-    }
-
-    pub(crate) fn query(&self) -> Vec<(String, String)> {
-        Url::parse(&format!("http://localhost{}", self.target))
-            .unwrap()
-            .query_pairs()
-            .into_owned()
-            .collect()
-    }
-
-    pub(crate) fn param(&self, name: &str) -> Option<String> {
-        self.query()
-            .into_iter()
-            .find_map(|(key, value)| (key == name).then_some(value))
-    }
+    Stall,
 }
 
 pub(crate) struct Recording(JoinHandle<Vec<RecordedRequest>>);
@@ -104,17 +80,20 @@ fn exchange(listener: &TcpListener, reply: Reply) -> RecordedRequest {
         assert!(count > 0, "incomplete body");
         bytes.extend_from_slice(&buffer[..count]);
     }
-    if let Reply::Response {
-        status,
-        headers,
-        body,
-    } = reply
-    {
-        let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{headers}\r\n{body}",
-            body.len()
-        );
-        stream.write_all(response.as_bytes()).unwrap();
+    match reply {
+        Reply::Response {
+            status,
+            headers,
+            body,
+        } => {
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{headers}\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        }
+        Reply::Close => {}
+        Reply::Stall => while stream.read(&mut [0; 64]).is_ok_and(|count| count > 0) {},
     }
     RecordedRequest {
         method,

@@ -1,20 +1,16 @@
 use super::models::SortDirection;
 use super::models::{Adjustment, BarsRequest};
 use super::*;
-use crate::transport::test_server::{self, Recording, Reply};
+use crate::transport::testing::scripted::{Recording, Reply, executor, interrupted, response};
 use serde_json::{Value, json};
 use std::time::Duration;
 
-fn reply(status: &'static str, body: Value) -> Reply {
-    reply_with_headers(status, body, "")
+fn reply(status: u16, body: Value) -> Reply {
+    response(status, &[], &body.to_string())
 }
 
-fn reply_with_headers(status: &'static str, body: Value, headers: &'static str) -> Reply {
-    Reply::Response {
-        status,
-        headers,
-        body: body.to_string(),
-    }
+fn rate_limited(reset: &str) -> Reply {
+    response(429, &[("X-RateLimit-Reset", reset)], "{}")
 }
 
 fn retries(max_attempts: u32) -> DataClientConfig {
@@ -25,6 +21,7 @@ fn retries(max_attempts: u32) -> DataClientConfig {
             base_delay: Duration::ZERO,
             max_delay: Duration::ZERO,
         },
+        transport: TransportConfig::default(),
     }
 }
 
@@ -36,8 +33,9 @@ fn feed(feed: Feed) -> DataClientConfig {
 }
 
 fn server(config: DataClientConfig, script: Vec<Reply>) -> (AlpacaDataClient, Recording) {
-    let (base_url, recording) = test_server::serve(script);
-    let client = AlpacaDataClient::build("test-key", "test-secret", base_url, config).unwrap();
+    let (executor, recording) = executor(script);
+    let client =
+        AlpacaDataClient::with_executor("test-key", "test-secret", config, executor).unwrap();
     (client, recording)
 }
 
@@ -99,7 +97,7 @@ fn new_rejects_credentials_when_key_is_blank() {
 
 #[test]
 fn get_stock_bars_authenticates_request_when_fetching_page() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", bars_page(172.79, None))]);
+    let (client, server) = server(retries(1), vec![reply(200, bars_page(172.79, None))]);
 
     let page = client
         .get_stock_bars(&bars_request(&["AAPL"]), None)
@@ -116,7 +114,7 @@ fn get_stock_bars_authenticates_request_when_fetching_page() {
 
 #[test]
 fn get_stock_bars_encodes_request_fields_when_request_is_populated() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", bars_page(172.79, None))]);
+    let (client, server) = server(retries(1), vec![reply(200, bars_page(172.79, None))]);
     let request = BarsRequest {
         symbols: vec!["AAPL".into(), "BRK.B".into()],
         timeframe: "5Min".into(),
@@ -150,7 +148,7 @@ fn get_stock_bars_encodes_request_fields_when_request_is_populated() {
 
 #[test]
 fn get_stock_bars_sends_page_token_when_token_is_supplied() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", bars_page(172.79, None))]);
+    let (client, server) = server(retries(1), vec![reply(200, bars_page(172.79, None))]);
 
     client
         .get_stock_bars(&bars_request(&["AAPL"]), Some("token&1"))
@@ -163,7 +161,7 @@ fn get_stock_bars_sends_page_token_when_token_is_supplied() {
 
 #[test]
 fn get_stock_bars_omits_page_token_when_token_is_not_supplied() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", bars_page(172.79, None))]);
+    let (client, server) = server(retries(1), vec![reply(200, bars_page(172.79, None))]);
 
     client
         .get_stock_bars(&bars_request(&["AAPL"]), None)
@@ -177,7 +175,7 @@ fn get_stock_bars_omits_page_token_when_token_is_not_supplied() {
 fn get_stock_bars_sends_feed_when_feed_is_configured() {
     let (client, server) = server(
         feed(Feed::DelayedSip),
-        vec![reply("200 OK", bars_page(172.79, None))],
+        vec![reply(200, bars_page(172.79, None))],
     );
 
     client
@@ -190,7 +188,7 @@ fn get_stock_bars_sends_feed_when_feed_is_configured() {
 
 #[test]
 fn get_stock_bars_omits_feed_when_feed_is_not_configured() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", bars_page(172.79, None))]);
+    let (client, server) = server(retries(1), vec![reply(200, bars_page(172.79, None))]);
 
     client
         .get_stock_bars(&bars_request(&["AAPL"]), None)
@@ -204,10 +202,7 @@ fn get_stock_bars_omits_feed_when_feed_is_not_configured() {
 fn get_stock_bars_returns_empty_page_when_bars_are_null() {
     let (client, server) = server(
         retries(1),
-        vec![reply(
-            "200 OK",
-            json!({"bars": null, "next_page_token": null}),
-        )],
+        vec![reply(200, json!({"bars": null, "next_page_token": null}))],
     );
 
     let page = client
@@ -245,9 +240,9 @@ fn stock_bars_pages_follows_tokens_when_more_pages_exist() {
     let (client, server) = server(
         feed(Feed::Iex),
         vec![
-            reply("200 OK", bars_page(1.0, Some("second"))),
-            reply("200 OK", bars_page(2.0, Some("third"))),
-            reply("200 OK", bars_page(3.0, None)),
+            reply(200, bars_page(1.0, Some("second"))),
+            reply(200, bars_page(2.0, Some("third"))),
+            reply(200, bars_page(3.0, None)),
         ],
     );
     let request = bars_request(&["AAPL"]);
@@ -277,8 +272,8 @@ fn stock_bars_pages_stops_when_page_fails() {
     let (client, server) = server(
         retries(1),
         vec![
-            reply("200 OK", bars_page(1.0, Some("second"))),
-            reply("403 Forbidden", json!({})),
+            reply(200, bars_page(1.0, Some("second"))),
+            reply(403, json!({})),
         ],
     );
     let request = bars_request(&["AAPL"]);
@@ -309,7 +304,7 @@ fn get_latest_stock_bars_joins_symbols_when_several_are_requested() {
     let (client, server) = server(
         feed(Feed::Sip),
         vec![reply(
-            "200 OK",
+            200,
             json!({"bars": {"AAPL": bar(172.79), "TSLA": bar(914.3)}}),
         )],
     );
@@ -334,7 +329,7 @@ fn get_latest_stock_bars_joins_symbols_when_several_are_requested() {
 
 #[test]
 fn get_latest_stock_bars_omits_feed_when_feed_is_not_configured() {
-    let (client, server) = server(retries(1), vec![reply("200 OK", latest_bars())]);
+    let (client, server) = server(retries(1), vec![reply(200, latest_bars())]);
 
     client.get_latest_stock_bars(&["AAPL"]).unwrap();
     let requests = server.requests();
@@ -357,7 +352,7 @@ fn get_latest_stock_bars_rejects_request_when_symbols_are_empty() {
 fn get_latest_stock_quotes_decodes_quotes_when_feed_is_configured() {
     let (client, server) = server(
         feed(Feed::Iex),
-        vec![reply("200 OK", json!({"quotes": {"AAPL": quote()}}))],
+        vec![reply(200, json!({"quotes": {"AAPL": quote()}}))],
     );
 
     let quotes = client.get_latest_stock_quotes(&["AAPL"]).unwrap();
@@ -387,7 +382,7 @@ fn get_latest_stock_quotes_rejects_request_when_symbol_is_empty() {
 fn get_latest_stock_trades_decodes_trades_when_feed_is_configured() {
     let (client, server) = server(
         feed(Feed::Boats),
-        vec![reply("200 OK", json!({"trades": {"AAPL": trade()}}))],
+        vec![reply(200, json!({"trades": {"AAPL": trade()}}))],
     );
 
     let trades = client.get_latest_stock_trades(&["AAPL"]).unwrap();
@@ -418,7 +413,7 @@ fn get_stock_snapshots_decodes_bare_object_when_keyed_by_symbol() {
     let (client, server) = server(
         feed(Feed::Overnight),
         vec![reply(
-            "200 OK",
+            200,
             json!({
                 "AAPL": {
                     "latestTrade": trade(), "latestQuote": quote(), "minuteBar": bar(172.69),
@@ -463,10 +458,7 @@ fn get_stock_snapshots_rejects_request_when_symbol_is_blank() {
 fn get_latest_stock_bars_retries_when_status_is_429() {
     let (client, server) = server(
         retries(3),
-        vec![
-            reply("429 Too Many Requests", json!({})),
-            reply("200 OK", latest_bars()),
-        ],
+        vec![reply(429, json!({})), reply(200, latest_bars())],
     );
 
     let bars = client.get_latest_stock_bars(&["AAPL"]).unwrap();
@@ -483,9 +475,9 @@ fn get_latest_stock_bars_retries_when_status_is_503() {
     let (client, server) = server(
         retries(3),
         vec![
-            reply("503 Service Unavailable", json!({})),
-            reply("503 Service Unavailable", json!({})),
-            reply("200 OK", latest_bars()),
+            reply(503, json!({})),
+            reply(503, json!({})),
+            reply(200, latest_bars()),
         ],
     );
 
@@ -497,11 +489,8 @@ fn get_latest_stock_bars_retries_when_status_is_503() {
 }
 
 #[test]
-fn get_latest_stock_bars_retries_when_connection_closes_without_response() {
-    let (client, server) = server(
-        retries(2),
-        vec![Reply::Close, reply("200 OK", latest_bars())],
-    );
+fn get_latest_stock_bars_retries_when_request_is_interrupted() {
+    let (client, server) = server(retries(2), vec![interrupted(), reply(200, latest_bars())]);
 
     let bars = client.get_latest_stock_bars(&["AAPL"]).unwrap();
     let requests = server.requests();
@@ -514,14 +503,7 @@ fn get_latest_stock_bars_retries_when_connection_closes_without_response() {
 fn get_latest_stock_bars_retries_when_rate_limit_reset_has_passed() {
     let (client, server) = server(
         retries(2),
-        vec![
-            reply_with_headers(
-                "429 Too Many Requests",
-                json!({}),
-                "X-RateLimit-Reset: 1\r\n",
-            ),
-            reply("200 OK", latest_bars()),
-        ],
+        vec![rate_limited("1"), reply(200, latest_bars())],
     );
 
     let bars = client.get_latest_stock_bars(&["AAPL"]).unwrap();
@@ -533,14 +515,7 @@ fn get_latest_stock_bars_retries_when_rate_limit_reset_has_passed() {
 
 #[test]
 fn get_latest_stock_bars_gives_up_when_rate_limit_reset_exceeds_max_delay() {
-    let (client, server) = server(
-        retries(3),
-        vec![reply_with_headers(
-            "429 Too Many Requests",
-            json!({}),
-            "X-RateLimit-Reset: 99999999999\r\n",
-        )],
-    );
+    let (client, server) = server(retries(3), vec![rate_limited("99999999999")]);
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
     let requests = server.requests();
@@ -551,7 +526,7 @@ fn get_latest_stock_bars_gives_up_when_rate_limit_reset_exceeds_max_delay() {
 
 #[test]
 fn get_latest_stock_bars_does_not_retry_when_status_is_400() {
-    let (client, server) = server(retries(3), vec![reply("400 Bad Request", json!({}))]);
+    let (client, server) = server(retries(3), vec![reply(400, json!({}))]);
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
     let requests = server.requests();
@@ -562,7 +537,7 @@ fn get_latest_stock_bars_does_not_retry_when_status_is_400() {
 
 #[test]
 fn get_latest_stock_bars_does_not_retry_when_status_is_403() {
-    let (client, server) = server(retries(3), vec![reply("403 Forbidden", json!({}))]);
+    let (client, server) = server(retries(3), vec![reply(403, json!({}))]);
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
     let requests = server.requests();
@@ -573,7 +548,7 @@ fn get_latest_stock_bars_does_not_retry_when_status_is_403() {
 
 #[test]
 fn get_latest_stock_bars_does_not_retry_when_json_is_malformed() {
-    let (client, server) = server(retries(3), vec![reply("200 OK", json!({"bars": 1}))]);
+    let (client, server) = server(retries(3), vec![reply(200, json!({"bars": 1}))]);
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
     let requests = server.requests();
@@ -587,9 +562,9 @@ fn get_latest_stock_bars_returns_last_status_when_retries_are_exhausted() {
     let (client, server) = server(
         retries(3),
         vec![
-            reply("503 Service Unavailable", json!({})),
-            reply("429 Too Many Requests", json!({})),
-            reply("500 Internal Server Error", json!({})),
+            reply(503, json!({})),
+            reply(429, json!({})),
+            reply(500, json!({})),
         ],
     );
 
@@ -602,7 +577,7 @@ fn get_latest_stock_bars_returns_last_status_when_retries_are_exhausted() {
 
 #[test]
 fn get_latest_stock_bars_returns_transport_error_when_retries_are_exhausted() {
-    let (client, server) = server(retries(2), vec![Reply::Close, Reply::Close]);
+    let (client, server) = server(retries(2), vec![interrupted(), interrupted()]);
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
     let requests = server.requests();
@@ -614,10 +589,10 @@ fn get_latest_stock_bars_returns_transport_error_when_retries_are_exhausted() {
 #[test]
 fn get_latest_stock_bars_sends_one_request_when_policy_is_none() {
     let config = DataClientConfig {
-        feed: None,
         retry: RetryPolicy::none(),
+        ..Default::default()
     };
-    let (client, server) = server(config, vec![reply("503 Service Unavailable", json!({}))]);
+    let (client, server) = server(config, vec![reply(503, json!({}))]);
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
     let requests = server.requests();
@@ -628,10 +603,7 @@ fn get_latest_stock_bars_sends_one_request_when_policy_is_none() {
 
 #[test]
 fn get_latest_stock_bars_sends_one_request_when_max_attempts_is_zero() {
-    let (client, server) = server(
-        retries(0),
-        vec![reply("503 Service Unavailable", json!({}))],
-    );
+    let (client, server) = server(retries(0), vec![reply(503, json!({}))]);
 
     let error = client.get_latest_stock_bars(&["AAPL"]).unwrap_err();
     let requests = server.requests();
@@ -645,14 +617,8 @@ fn get_latest_stock_bars_reports_status_without_body_when_retries_are_exhausted(
     let (client, server) = server(
         retries(2),
         vec![
-            reply(
-                "500 Internal Server Error",
-                json!({"message": "sensitive detail"}),
-            ),
-            reply(
-                "500 Internal Server Error",
-                json!({"message": "sensitive detail"}),
-            ),
+            reply(500, json!({"message": "sensitive detail"})),
+            reply(500, json!({"message": "sensitive detail"})),
         ],
     );
 

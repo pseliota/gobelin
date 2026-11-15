@@ -1,19 +1,8 @@
 use super::fixtures::{OBSERVATIONS, SEARCH, SERIES};
 use super::*;
+use crate::transport::testing::query_pairs;
 use serde::Serialize;
 use serde_json::{Value, json};
-
-fn query_pairs<Q: Serialize>(request: &Q) -> Vec<(String, String)> {
-    reqwest::blocking::Client::new()
-        .get("http://localhost/")
-        .query(request)
-        .build()
-        .unwrap()
-        .url()
-        .query_pairs()
-        .into_owned()
-        .collect()
-}
 
 fn pairs(expected: &[(&str, &str)]) -> Vec<(String, String)> {
     expected

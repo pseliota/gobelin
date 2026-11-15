@@ -1,11 +1,10 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use reqwest::header::HeaderMap;
+use crate::transport::Headers;
 
-pub(super) fn reset_hint(headers: &HeaderMap, now: SystemTime) -> Option<Duration> {
+pub(super) fn reset_hint(headers: &Headers, now: SystemTime) -> Option<Duration> {
     headers
         .get("x-ratelimit-reset")
-        .and_then(|value| value.to_str().ok())
         .and_then(|value| reset_after(value, now))
 }
 
@@ -44,6 +43,26 @@ mod tests {
 
             assert_eq!(wait, expected, "{header:?}");
         }
+    }
+
+    #[test]
+    fn reset_hint_reads_reset_header_when_header_is_present() {
+        let now = UNIX_EPOCH + Duration::from_secs(1_000);
+        let mut headers = Headers::default();
+        headers.insert("X-RateLimit-Reset", "1060");
+
+        let wait = reset_hint(&headers, now);
+
+        assert_eq!(wait, Some(Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn reset_hint_returns_none_when_header_is_absent() {
+        let now = UNIX_EPOCH + Duration::from_secs(1_000);
+
+        let wait = reset_hint(&Headers::default(), now);
+
+        assert_eq!(wait, None);
     }
 
     #[test]

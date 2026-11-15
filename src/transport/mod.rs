@@ -1,44 +1,47 @@
+mod config;
 mod error;
+mod executor;
+mod http;
+mod request;
 mod retry;
 #[cfg(test)]
-pub(crate) mod test_server;
+pub(crate) mod testing;
 
 use std::{
     thread,
     time::{Duration, SystemTime},
 };
 
-use reqwest::{
-    Method, StatusCode, Url,
-    blocking::{Client, RequestBuilder, Response},
-    header::HeaderMap,
-    redirect::Policy,
-};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::de::DeserializeOwned;
+use url::Url;
 
+pub use self::config::TransportConfig;
 pub use self::error::ClientError;
+pub(crate) use self::http::{Headers, HttpExecutor, HttpMethod, HttpResponse, status};
+use self::http::{HttpRequest, TransportFailure};
+pub(crate) use self::request::{GetRequest, Request};
 use self::retry::Failure;
 pub use self::retry::RetryPolicy;
 
-pub(crate) type RateLimitHint = fn(&HeaderMap, SystemTime) -> Option<Duration>;
+pub(crate) type RateLimitHint = fn(&Headers, SystemTime) -> Option<Duration>;
 
 pub(crate) struct Transport {
-    http: Client,
+    executor: Box<dyn HttpExecutor>,
     base_url: Url,
+    default_headers: Headers,
 }
 
 impl Transport {
-    pub(crate) fn new(base_url: Url, default_headers: HeaderMap) -> Result<Self, ClientError> {
-        let mut builder = Client::builder()
-            .default_headers(default_headers)
-            .timeout(Duration::from_secs(20))
-            .redirect(Policy::none())
-            .retry(reqwest::retry::never());
-        if base_url.scheme() == "http" {
-            builder = builder.no_proxy();
+    pub(crate) fn new(
+        base_url: Url,
+        default_headers: Headers,
+        executor: Box<dyn HttpExecutor>,
+    ) -> Self {
+        Self {
+            executor,
+            base_url,
+            default_headers,
         }
-        let http = builder.build().map_err(|_| ClientError::Initialization)?;
-        Ok(Self { http, base_url })
     }
 
     #[cfg(test)]
@@ -48,9 +51,32 @@ impl Transport {
 
     pub(crate) fn request(
         &self,
-        method: Method,
+        method: HttpMethod,
         segments: &[&str],
-    ) -> Result<RequestBuilder, ClientError> {
+    ) -> Result<Request, ClientError> {
+        let url = self.url(segments)?;
+        Ok(Request::new(method, url, self.default_headers.clone()))
+    }
+
+    pub(crate) fn json<T: DeserializeOwned>(&self, request: Request) -> Result<T, ClientError> {
+        decode(&self.send(request, status::OK)?)
+    }
+
+    pub(crate) fn send(
+        &self,
+        request: Request,
+        expected: u16,
+    ) -> Result<HttpResponse, ClientError> {
+        let response = self.execute(request.into_http())?;
+        if response.status != expected {
+            return Err(ClientError::HttpStatus {
+                status: response.status,
+            });
+        }
+        Ok(response)
+    }
+
+    fn url(&self, segments: &[&str]) -> Result<Url, ClientError> {
         if segments
             .iter()
             .any(|s| s.is_empty() || *s == "." || *s == "..")
@@ -62,36 +88,16 @@ impl Transport {
             .map_err(|_| ClientError::InvalidPath)?
             .pop_if_empty()
             .extend(segments);
-        Ok(self.http.request(method, url))
+        Ok(url)
     }
 
-    pub(crate) fn json<T: DeserializeOwned>(
-        &self,
-        request: RequestBuilder,
-    ) -> Result<T, ClientError> {
-        decode(self.send(request, StatusCode::OK)?)
-    }
-
-    pub(crate) fn send(
-        &self,
-        request: RequestBuilder,
-        expected: StatusCode,
-    ) -> Result<Response, ClientError> {
-        let response = execute(request)?;
-        if response.status() != expected {
-            return Err(ClientError::HttpStatus {
-                status: response.status().as_u16(),
-            });
-        }
-        Ok(response)
-    }
-}
-
-pub(crate) struct GetRequest(RequestBuilder);
-
-impl GetRequest {
-    pub(crate) fn query<Q: Serialize + ?Sized>(self, query: &Q) -> Self {
-        Self(self.0.query(query))
+    fn execute(&self, request: HttpRequest) -> Result<HttpResponse, ClientError> {
+        self.executor
+            .execute(request)
+            .map_err(|failure| match failure {
+                TransportFailure::Unsendable => ClientError::InvalidRequest,
+                TransportFailure::Interrupted { timed_out } => ClientError::Transport { timed_out },
+            })
     }
 }
 
@@ -120,17 +126,15 @@ impl RetryingTransport {
     }
 
     pub(crate) fn get(&self, segments: &[&str]) -> Result<GetRequest, ClientError> {
-        self.transport
-            .request(Method::GET, segments)
-            .map(GetRequest)
+        let url = self.transport.url(segments)?;
+        Ok(GetRequest::new(url, self.transport.default_headers.clone()))
     }
 
     pub(crate) fn fetch<T: DeserializeOwned>(&self, request: GetRequest) -> Result<T, ClientError> {
         let mut attempts = 0;
         loop {
             attempts += 1;
-            let attempt = request.0.try_clone().ok_or(ClientError::InvalidRequest)?;
-            let (error, failure) = match self.attempt(attempt) {
+            let (error, failure) = match self.attempt(request.to_http()) {
                 Err(failed) => failed,
                 Ok(value) => return Ok(value),
             };
@@ -143,16 +147,16 @@ impl RetryingTransport {
 
     fn attempt<T: DeserializeOwned>(
         &self,
-        request: RequestBuilder,
+        request: HttpRequest,
     ) -> Result<T, (ClientError, Option<Failure>)> {
-        let response = execute(request).map_err(classify)?;
-        if response.status() == StatusCode::OK {
-            return decode(response).map_err(classify);
+        let response = self.transport.execute(request).map_err(classify)?;
+        if response.status == status::OK {
+            return decode(&response).map_err(classify);
         }
-        let status = response.status().as_u16();
+        let status = response.status;
         let reset_after = self
             .rate_limit
-            .and_then(|hint| hint(response.headers(), SystemTime::now()));
+            .and_then(|hint| hint(&response.headers, SystemTime::now()));
         let failure = Failure::Status {
             status,
             reset_after,
@@ -166,28 +170,8 @@ fn classify(error: ClientError) -> (ClientError, Option<Failure>) {
     (error, failure)
 }
 
-fn execute(request: RequestBuilder) -> Result<Response, ClientError> {
-    request.send().map_err(|error| {
-        if error.is_builder() {
-            ClientError::InvalidRequest
-        } else {
-            ClientError::Transport {
-                timed_out: error.is_timeout(),
-            }
-        }
-    })
-}
-
-pub(crate) fn decode<T: DeserializeOwned>(response: Response) -> Result<T, ClientError> {
-    response.json().map_err(|error| {
-        if error.is_timeout() || error.is_body() {
-            ClientError::Transport {
-                timed_out: error.is_timeout(),
-            }
-        } else {
-            ClientError::InvalidResponse
-        }
-    })
+pub(crate) fn decode<T: DeserializeOwned>(response: &HttpResponse) -> Result<T, ClientError> {
+    serde_json::from_slice(&response.body).map_err(|_| ClientError::InvalidResponse)
 }
 
 #[cfg(test)]
