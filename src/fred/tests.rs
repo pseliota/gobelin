@@ -1,11 +1,13 @@
 use std::time::Duration;
 
-use super::models::fixtures::{OBSERVATIONS, SEARCH, SERIES};
 use super::models::{
     AggregationMethod, FilterVariable, Frequency, ObservationsRequest, SearchOrderBy,
-    SearchRequest, SearchType, SortOrder, Units,
+    SearchRequest, SearchType, SeasonalAdjustment, SeriesId, SortOrder, Units,
 };
+use super::wire::fixtures::{OBSERVATIONS, SEARCH, SERIES};
 use super::*;
+use crate::conversion::{ConversionError, ValueKind};
+use crate::market::Date;
 use crate::transport::test_server::{self, Recording, Reply};
 
 const API_KEY: &str = "fred-secret-0123456789abcdef";
@@ -121,10 +123,33 @@ fn get_series_decodes_first_series_when_response_is_fixture() {
     let series = client.get_series("GNPCA").unwrap();
     server.request();
 
-    assert_eq!(series.id, "GNPCA");
+    assert_eq!(series.id, SeriesId::from("GNPCA"));
     assert_eq!(series.title, "Real Gross National Product");
+    assert_eq!(series.frequency, Some(Frequency::Annual));
+    assert_eq!(
+        series.seasonal_adjustment,
+        SeasonalAdjustment::NotSeasonallyAdjusted
+    );
     assert_eq!(series.popularity, Some(39));
     assert_eq!(series.notes.as_deref(), Some("BEA Account Code: A001RX1"));
+}
+
+#[test]
+fn get_series_returns_conversion_error_when_last_updated_is_malformed() {
+    let body = SERIES.replace("2013-07-31 09:26:16-05", "last week");
+    let (client, server) = server(retries(3), vec![reply("200 OK", &body)]);
+
+    let error = client.get_series("GNPCA").unwrap_err();
+    let requests = server.requests();
+
+    assert_eq!(
+        error,
+        ClientError::Conversion(ConversionError::new(
+            "series.last_updated",
+            ValueKind::Timestamp
+        ))
+    );
+    assert_eq!(requests.len(), 1);
 }
 
 #[test]
@@ -164,7 +189,7 @@ fn get_series_retries_when_status_is_429() {
 
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].target, requests[1].target);
-    assert_eq!(series.id, "GNPCA");
+    assert_eq!(series.id.as_str(), "GNPCA");
 }
 
 #[test]
@@ -181,7 +206,7 @@ fn get_series_retries_when_status_is_500() {
     let requests = server.requests();
 
     assert_eq!(requests.len(), 2);
-    assert_eq!(series.id, "GNPCA");
+    assert_eq!(series.id.as_str(), "GNPCA");
 }
 
 #[test]
@@ -303,8 +328,27 @@ fn get_observations_decodes_page_when_response_is_fixture() {
 
     assert_eq!(page.count, 84);
     assert_eq!(page.observations.len(), 2);
-    assert_eq!(page.observations[0].numeric_value(), Some(1065.9));
+    assert_eq!(page.observations[0].date, Date::new(1929, 1, 1).unwrap());
+    assert_eq!(page.observations[0].value, Some(1065.9));
+    assert_eq!(page.units, Units::Levels);
     assert_eq!(page.next_offset(), Some(2));
+}
+
+#[test]
+fn get_observations_returns_conversion_error_when_value_is_malformed() {
+    let body = OBSERVATIONS.replace("975.5", "n/a");
+    let (client, server) = server(retries(3), vec![reply("200 OK", &body)]);
+
+    let error = client
+        .get_observations(&observations_request("GNPCA"))
+        .unwrap_err();
+    let requests = server.requests();
+
+    assert_eq!(
+        error,
+        ClientError::Conversion(ConversionError::new("observation.value", ValueKind::Number))
+    );
+    assert_eq!(requests.len(), 1);
 }
 
 #[test]
@@ -394,9 +438,27 @@ fn search_series_decodes_page_when_response_is_fixture() {
 
     assert_eq!(page.count, 32);
     assert_eq!(page.series.len(), 1);
-    assert_eq!(page.series[0].id, "MSIM2");
+    assert_eq!(page.series[0].id, SeriesId::from("MSIM2"));
+    assert_eq!(page.order_by, SearchOrderBy::SearchRank);
     assert_eq!(page.series[0].group_popularity, Some(33));
     assert_eq!(page.next_offset(), Some(1));
+}
+
+#[test]
+fn search_series_returns_conversion_error_when_ordering_is_unknown() {
+    let body = SEARCH.replace("search_rank", "relevance");
+    let (client, server) = server(retries(3), vec![reply("200 OK", &body)]);
+
+    let error = client
+        .search_series(&search_request("money stock"))
+        .unwrap_err();
+    let requests = server.requests();
+
+    assert_eq!(
+        error,
+        ClientError::Conversion(ConversionError::new("search.order_by", ValueKind::Code))
+    );
+    assert_eq!(requests.len(), 1);
 }
 
 #[test]

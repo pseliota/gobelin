@@ -1,6 +1,7 @@
 pub mod models;
 
 mod series;
+mod wire;
 
 use reqwest::{Url, header::HeaderMap};
 use serde::{Serialize, de::DeserializeOwned};

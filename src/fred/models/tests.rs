@@ -1,5 +1,5 @@
-use super::fixtures::{OBSERVATIONS, SEARCH, SERIES};
 use super::*;
+use crate::market::Date;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -26,171 +26,87 @@ fn wire_name<T: Serialize>(value: T) -> Value {
     serde_json::to_value(value).unwrap()
 }
 
-fn first_series(document: &str) -> Value {
-    let mut value: Value = serde_json::from_str(document).unwrap();
-    value["seriess"][0].take()
+fn date(year: i16, month: i8, day: i8) -> Date {
+    Date::new(year, month, day).unwrap()
 }
 
-fn observation(value: &str) -> Observation {
+fn realtime() -> RealtimePeriod {
+    RealtimePeriod {
+        start: date(2013, 8, 14),
+        end: date(2013, 8, 14),
+    }
+}
+
+fn observation() -> Observation {
     Observation {
-        realtime_start: "2013-08-14".into(),
-        realtime_end: "2013-08-14".into(),
-        date: "1929-01-01".into(),
-        value: value.into(),
+        date: date(1929, 1, 1),
+        value: Some(1.0),
+        realtime: realtime(),
+    }
+}
+
+fn series() -> Series {
+    Series {
+        id: "GNPCA".into(),
+        realtime: realtime(),
+        title: "Real Gross National Product".into(),
+        observation_start: date(1929, 1, 1),
+        observation_end: date(2012, 1, 1),
+        frequency: Some(Frequency::Annual),
+        frequency_label: "Annual".into(),
+        units: "Billions of Chained 2009 Dollars".into(),
+        units_short: "Bil. of Chn. 2009 $".into(),
+        seasonal_adjustment: SeasonalAdjustment::NotSeasonallyAdjusted,
+        last_updated: "2013-07-31T14:26:16Z".parse().unwrap(),
+        popularity: Some(39),
+        group_popularity: None,
+        notes: None,
     }
 }
 
 fn observations_page(offset: u32, items: usize, count: u32) -> ObservationsPage {
-    let mut page: ObservationsPage = serde_json::from_str(OBSERVATIONS).unwrap();
-    page.offset = offset;
-    page.count = count;
-    page.observations = vec![observation("1.0"); items];
-    page
+    ObservationsPage {
+        realtime: realtime(),
+        observation_start: date(1776, 7, 4),
+        observation_end: date(9999, 12, 31),
+        units: Units::Levels,
+        output_type: 1,
+        sort_order: SortOrder::Asc,
+        count,
+        offset,
+        limit: 100_000,
+        observations: vec![observation(); items],
+    }
 }
 
 fn series_page(offset: u32, items: usize, count: u32) -> SeriesPage {
-    let mut page: SeriesPage = serde_json::from_str(SEARCH).unwrap();
-    let series = page.series[0].clone();
-    page.offset = offset;
-    page.count = count;
-    page.series = vec![series; items];
-    page
-}
-
-#[test]
-fn deserialize_maps_series_fields_when_response_is_series_fixture() {
-    let response = first_series(SERIES);
-
-    let series: Series = serde_json::from_value(response).unwrap();
-
-    assert_eq!(
-        series,
-        Series {
-            id: "GNPCA".into(),
-            realtime_start: "2013-08-14".into(),
-            realtime_end: "2013-08-14".into(),
-            title: "Real Gross National Product".into(),
-            observation_start: "1929-01-01".into(),
-            observation_end: "2012-01-01".into(),
-            frequency: "Annual".into(),
-            frequency_short: "A".into(),
-            units: "Billions of Chained 2009 Dollars".into(),
-            units_short: "Bil. of Chn. 2009 $".into(),
-            seasonal_adjustment: "Not Seasonally Adjusted".into(),
-            seasonal_adjustment_short: "NSA".into(),
-            last_updated: "2013-07-31 09:26:16-05".into(),
-            popularity: Some(39),
-            group_popularity: None,
-            notes: Some("BEA Account Code: A001RX1".into()),
-        }
-    );
-}
-
-#[test]
-fn deserialize_leaves_optional_series_fields_unknown_when_they_are_absent() {
-    let mut response = first_series(SERIES);
-    let fields = response.as_object_mut().unwrap();
-    fields.remove("notes");
-    fields.remove("popularity");
-
-    let series: Series = serde_json::from_value(response).unwrap();
-
-    assert_eq!(series.notes, None);
-    assert_eq!(series.popularity, None);
-}
-
-#[test]
-fn deserialize_leaves_optional_series_fields_unknown_when_they_are_null() {
-    let mut response = first_series(SERIES);
-    response["notes"] = json!(null);
-    response["popularity"] = json!(null);
-    response["group_popularity"] = json!(null);
-
-    let series: Series = serde_json::from_value(response).unwrap();
-
-    assert_eq!(series.notes, None);
-    assert_eq!(series.popularity, None);
-    assert_eq!(series.group_popularity, None);
-}
-
-#[test]
-fn deserialize_parses_observations_page_when_response_is_observations_fixture() {
-    let page: ObservationsPage = serde_json::from_str(OBSERVATIONS).unwrap();
-
-    assert_eq!(page.realtime_start, "2013-08-14");
-    assert_eq!(page.realtime_end, "2013-08-14");
-    assert_eq!(page.observation_start, "1776-07-04");
-    assert_eq!(page.observation_end, "9999-12-31");
-    assert_eq!(page.units, "lin");
-    assert_eq!(page.output_type, 1);
-    assert_eq!(page.order_by, "observation_date");
-    assert_eq!(page.sort_order, "asc");
-    assert_eq!(page.count, 84);
-    assert_eq!(page.offset, 0);
-    assert_eq!(page.limit, 100000);
-    assert_eq!(
-        page.observations,
-        vec![
-            Observation {
-                realtime_start: "2013-08-14".into(),
-                realtime_end: "2013-08-14".into(),
-                date: "1929-01-01".into(),
-                value: "1065.9".into(),
-            },
-            Observation {
-                realtime_start: "2013-08-14".into(),
-                realtime_end: "2013-08-14".into(),
-                date: "1930-01-01".into(),
-                value: "975.5".into(),
-            },
-        ]
-    );
-}
-
-#[test]
-fn deserialize_parses_series_page_when_response_is_search_fixture() {
-    let page: SeriesPage = serde_json::from_str(SEARCH).unwrap();
-
-    assert_eq!(page.realtime_start, "2017-08-01");
-    assert_eq!(page.realtime_end, "2017-08-01");
-    assert_eq!(page.order_by, "search_rank");
-    assert_eq!(page.sort_order, "desc");
-    assert_eq!(page.count, 32);
-    assert_eq!(page.offset, 0);
-    assert_eq!(page.limit, 1000);
-    assert_eq!(page.series.len(), 1);
-    assert_eq!(page.series[0].id, "MSIM2");
-    assert_eq!(page.series[0].popularity, Some(34));
-    assert_eq!(page.series[0].group_popularity, Some(33));
-}
-
-#[test]
-fn numeric_value_parses_number_when_value_is_numeric() {
-    let observation = observation("1065.9");
-
-    let value = observation.numeric_value();
-
-    assert_eq!(value, Some(1065.9));
-}
-
-#[test]
-fn numeric_value_returns_none_when_value_is_missing_marker() {
-    let observation = observation(".");
-
-    let value = observation.numeric_value();
-
-    assert_eq!(value, None);
-}
-
-#[test]
-fn numeric_value_returns_none_when_value_is_other_text() {
-    let cases = ["", "n/a", "NaN", "inf", "1,000"];
-
-    for text in cases {
-        let value = observation(text).numeric_value();
-
-        assert_eq!(value, None, "{text:?}");
+    SeriesPage {
+        realtime: realtime(),
+        order_by: SearchOrderBy::SearchRank,
+        sort_order: SortOrder::Desc,
+        count,
+        offset,
+        limit: 1000,
+        series: vec![series(); items],
     }
+}
+
+#[test]
+fn as_str_returns_identifier_when_id_is_built_from_text() {
+    let id = SeriesId::from("GNPCA");
+
+    let text = id.as_str();
+
+    assert_eq!(text, "GNPCA");
+}
+
+#[test]
+fn fmt_writes_identifier_when_id_is_displayed() {
+    let id = SeriesId::from(String::from("GNPCA"));
+
+    let text = id.to_string();
+
+    assert_eq!(text, "GNPCA");
 }
 
 #[test]
