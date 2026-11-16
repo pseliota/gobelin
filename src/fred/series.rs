@@ -1,22 +1,19 @@
-use serde::Deserialize;
-
 use super::FredClient;
 use super::models::{ObservationsPage, ObservationsRequest, SearchRequest, Series, SeriesPage};
+use super::wire;
 use crate::transport::ClientError;
-
-#[derive(Deserialize)]
-struct SeriesList {
-    seriess: Vec<Series>,
-}
 
 impl FredClient {
     pub fn get_series(&self, series_id: &str) -> Result<Series, ClientError> {
         require(series_id)?;
-        let list: SeriesList = self.fetch(&["fred", "series"], &[("series_id", series_id)])?;
-        list.seriess
+        let list: wire::SeriesList =
+            self.fetch(&["fred", "series"], &[("series_id", series_id)])?;
+        let series = list
+            .seriess
             .into_iter()
             .next()
-            .ok_or(ClientError::InvalidResponse)
+            .ok_or(ClientError::InvalidResponse)?;
+        Ok(series.try_into()?)
     }
 
     pub fn get_observations(
@@ -24,12 +21,14 @@ impl FredClient {
         req: &ObservationsRequest,
     ) -> Result<ObservationsPage, ClientError> {
         require(&req.series_id)?;
-        self.fetch(&["fred", "series", "observations"], req)
+        let page: wire::ObservationsPage = self.fetch(&["fred", "series", "observations"], req)?;
+        Ok(page.try_into()?)
     }
 
     pub fn search_series(&self, req: &SearchRequest) -> Result<SeriesPage, ClientError> {
         require(&req.search_text)?;
-        self.fetch(&["fred", "series", "search"], req)
+        let page: wire::SeriesPage = self.fetch(&["fred", "series", "search"], req)?;
+        Ok(page.try_into()?)
     }
 }
 

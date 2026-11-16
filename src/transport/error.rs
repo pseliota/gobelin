@@ -1,5 +1,7 @@
 use std::{error::Error, fmt};
 
+use crate::conversion::ConversionError;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ClientError {
@@ -10,6 +12,7 @@ pub enum ClientError {
     Transport { timed_out: bool },
     HttpStatus { status: u16 },
     InvalidResponse,
+    Conversion(ConversionError),
 }
 
 impl fmt::Display for ClientError {
@@ -33,8 +36,22 @@ impl fmt::Display for ClientError {
             Self::InvalidResponse => {
                 f.write_str("The server returned an unexpected response format")
             }
+            Self::Conversion(error) => error.fmt(f),
         }
     }
 }
 
-impl Error for ClientError {}
+impl Error for ClientError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Conversion(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<ConversionError> for ClientError {
+    fn from(error: ConversionError) -> Self {
+        Self::Conversion(error)
+    }
+}

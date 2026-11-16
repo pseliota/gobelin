@@ -1,5 +1,6 @@
 use super::test_server::{self, Recording, Reply};
 use super::*;
+use crate::conversion::{ConversionError, ValueKind};
 use serde_json::{Value, json};
 
 fn reply(status: &'static str, headers: &'static str) -> Reply {
@@ -101,6 +102,7 @@ fn fmt_names_no_provider_when_displaying_any_error() {
         ClientError::Transport { timed_out: false },
         ClientError::HttpStatus { status: 503 },
         ClientError::InvalidResponse,
+        ClientError::Conversion(ConversionError::new("order.side", ValueKind::Code)),
     ];
 
     for error in errors {

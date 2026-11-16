@@ -1,32 +1,21 @@
-use serde::Deserialize;
+use super::{RealtimePeriod, SortOrder, Units};
+use crate::market::Date;
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Observation {
-    pub realtime_start: String,
-    pub realtime_end: String,
-    pub date: String,
-    pub value: String,
+    pub date: Date,
+    pub value: Option<f64>,
+    pub realtime: RealtimePeriod,
 }
 
-impl Observation {
-    pub fn numeric_value(&self) -> Option<f64> {
-        self.value
-            .parse::<f64>()
-            .ok()
-            .filter(|value| value.is_finite())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ObservationsPage {
-    pub realtime_start: String,
-    pub realtime_end: String,
-    pub observation_start: String,
-    pub observation_end: String,
-    pub units: String,
+    pub realtime: RealtimePeriod,
+    pub observation_start: Date,
+    pub observation_end: Date,
+    pub units: Units,
     pub output_type: u32,
-    pub order_by: String,
-    pub sort_order: String,
+    pub sort_order: SortOrder,
     pub count: u32,
     pub offset: u32,
     pub limit: u32,
